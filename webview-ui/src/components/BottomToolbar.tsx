@@ -20,6 +20,11 @@ interface BottomToolbarProps {
   terminalAvailable: boolean;
   /** Why the terminal is off (shown on the disabled button's tooltip). */
   terminalUnavailableReason: string | null;
+  isTaskBoardOpen: boolean;
+  onToggleTaskBoard: () => void;
+  /** False while no agent has published a task list — the button is pointless
+   *  then, and a toggle that reveals nothing reads as broken. */
+  hasTasks: boolean;
 }
 
 export function BottomToolbar({
@@ -32,6 +37,9 @@ export function BottomToolbar({
   onEditDirectory,
   terminalAvailable,
   terminalUnavailableReason,
+  isTaskBoardOpen,
+  onToggleTaskBoard,
+  hasTasks,
 }: BottomToolbarProps) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const launchRef = useRef<HTMLDivElement>(null);
@@ -118,6 +126,15 @@ export function BottomToolbar({
       >
         Layout
       </Button>
+      {hasTasks && (
+        <Button
+          variant={isTaskBoardOpen ? 'active' : 'default'}
+          onClick={onToggleTaskBoard}
+          title="Show what each agent is working through"
+        >
+          Tasks
+        </Button>
+      )}
       <Button
         variant={isSettingsOpen ? 'active' : 'default'}
         onClick={onToggleSettings}
