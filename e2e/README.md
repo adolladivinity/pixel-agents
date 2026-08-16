@@ -367,8 +367,12 @@ This section is auto-generated. Do not edit between the markers; CI fails on dri
 - `e2e/claude/hooks-off/pets.spec.ts:117` — placing a pet toggles it on/off and persists across a panel reload (Pets)
 - `e2e/claude/hooks-off/pets.spec.ts:202` — clicking a pet shows a heart bubble that auto-dismisses and dismisses on re-click (Pets)
 
-### `@area:tasks` (3 tests)
+### `@area:tasks` (7 tests)
 
+- `e2e/claude/hooks-on/taskboard-selection.spec.ts:35` — an agent walks to the office task board when it revises its list, then returns (Hooks ON / task board — office errand and selection)
+- `e2e/claude/hooks-on/taskboard-selection.spec.ts:76` — a revision inside the cooldown updates the board without a second walk (Hooks ON / task board — office errand and selection)
+- `e2e/claude/hooks-on/taskboard-selection.spec.ts:130` — the tab strip switches boards and selects that agent in the office (Hooks ON / task board — office errand and selection)
+- `e2e/claude/hooks-on/taskboard-selection.spec.ts:199` — selecting an agent switches the board; one with no list hides it but keeps the tabs (Hooks ON / task board — office errand and selection)
 - `e2e/claude/hooks-on/taskboard.spec.ts:38` — publishes a task board from TodoWrite, replaces it wholesale, and retracts it on an empty list (Hooks ON / task board)
 - `e2e/claude/hooks-on/taskboard.spec.ts:113` — the Tasks toggle hides and reshows the board (Hooks ON / task board)
 - `e2e/claude/hooks-on/taskboard.spec.ts:157` — /clear empties the board while the character is reassigned (Hooks ON / task board)
