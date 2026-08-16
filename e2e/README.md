@@ -41,6 +41,16 @@ Erase semantics and stroke-based undo in the layout editor. The erase tool clear
 ### Mobile shell (`@area:mobile`)
 
 The standalone page on a phone-sized touch viewport (390×844, `hasTouch`): the mobile shell renders instead of the desktop toolbar; the + card launches an agent into the server PTY and slides to its terminal; the >_ / Office toggle, the two-step card tap (focus, then open), and the edge swipe in both directions switch pages; tapping a URL in the terminal opens it. Taps use Playwright's real touch input; the edge swipe dispatches the TouchEvent sequence of a finger drag, since `touchscreen` has no multi-step drag. The gesture state machines (edge swipe, terminal touch, card order) are unit-tested on the webview Node runner. That the VS Code webview never renders the mobile shell is pinned by the VS Code fixture itself, which waits for the desktop toolbar's `+ Agent` button.
+### Task board (`@area:tasks`)
+
+The per-agent task board beside the office, fed by the task list an agent maintains
+itself (Claude: TodoWrite, forwarded whole on every PreToolUse). Covers the board
+appearing on the first list, grouping rows in_progress -> pending -> completed with
+the agent's own order preserved inside a status, replacing the list wholesale on the
+next revision, retracting on an empty list, the Tasks toggle hiding and reshowing it,
+and /clear emptying a board that described the session that just ended. Hook-driven
+only: the heuristic JSONL path publishes no task list, so there is no hooks-off
+variant.
 
 ## What's NOT covered (gaps + deferred)
 
@@ -356,6 +366,12 @@ This section is auto-generated. Do not edit between the markers; CI fails on dri
 - `e2e/claude/hooks-off/pets.spec.ts:90` — pet sprites load, broadcast, and expose manifest names in the editor (Pets)
 - `e2e/claude/hooks-off/pets.spec.ts:117` — placing a pet toggles it on/off and persists across a panel reload (Pets)
 - `e2e/claude/hooks-off/pets.spec.ts:202` — clicking a pet shows a heart bubble that auto-dismisses and dismisses on re-click (Pets)
+
+### `@area:tasks` (3 tests)
+
+- `e2e/claude/hooks-on/taskboard.spec.ts:38` — publishes a task board from TodoWrite, replaces it wholesale, and retracts it on an empty list (Hooks ON / task board)
+- `e2e/claude/hooks-on/taskboard.spec.ts:113` — the Tasks toggle hides and reshows the board (Hooks ON / task board)
+- `e2e/claude/hooks-on/taskboard.spec.ts:157` — /clear empties the board while the character is reassigned (Hooks ON / task board)
 
 <!-- END:E2E-INVENTORY -->
 

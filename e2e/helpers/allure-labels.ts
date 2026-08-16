@@ -17,6 +17,7 @@ const AREA_TO_EPIC: Record<string, string> = {
   areas: 'Areas (zoning) system',
   mobile: 'Mobile shell',
   editor: 'Layout editor',
+  tasks: 'Task board',
 };
 
 /**
