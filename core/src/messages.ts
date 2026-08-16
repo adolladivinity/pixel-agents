@@ -206,6 +206,7 @@ export interface AgentTasks {
   type: 'agentTasks';
   id: number;
   tasks: AgentTask[];
+  replay?: boolean;
 }
 
 export interface AgentTask {

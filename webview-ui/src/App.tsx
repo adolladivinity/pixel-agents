@@ -83,6 +83,7 @@ function App() {
   const {
     agents,
     selectedAgent,
+    setSelectedAgent,
     agentTools,
     agentStatuses,
     agentAwaitingInput,
@@ -225,6 +226,25 @@ function App() {
     transport.send({ type: 'focusAgent', id });
   }, []);
 
+  /**
+   * Select an agent from a DOM panel beside the canvas (the task board).
+   *
+   * The canvas keeps its selection imperatively on OfficeState, so a panel has
+   * to set BOTH halves: the office one drives the character outline and the
+   * camera, the React one drives the panels. Setting only the React half would
+   * switch the board while leaving the office highlighting nobody.
+   */
+  const handleSelectAgentFromPanel = useCallback(
+    (id: number) => {
+      const os = getOfficeState();
+      os.selectedAgentId = id;
+      os.cameraFollowId = id;
+      setSelectedAgent(id);
+      transport.send({ type: 'focusAgent', id });
+    },
+    [setSelectedAgent],
+  );
+
   // The Intro's wire-facing state machine — which asks survive being mooted,
   // when a hooksStatus is this tour's install verdict — lives in useIntroTour
   // (pure reducer in introTourState.ts); the App only wires it to the bubble.
@@ -317,6 +337,9 @@ function App() {
       };
     };
     hooks.getShowAreas = () => effectiveShowAreas;
+    // Lets the module-load `selectAgent` hook update React selection as well as
+    // the office's, so it behaves like a canvas click rather than half of one.
+    hooks.selectionSync = setSelectedAgent;
   }, [
     editor.handleEditorTileAction,
     editor.handleEditorEraseAction,
@@ -324,6 +347,7 @@ function App() {
     editor.zoom,
     editor.panRef,
     effectiveShowAreas,
+    setSelectedAgent,
   ]);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -488,6 +512,7 @@ function App() {
       <OfficeCanvas
         officeState={officeState}
         onClick={handleClick}
+        onAgentSelectionChange={setSelectedAgent}
         isEditMode={editor.isEditMode}
         editorState={editorState}
         onEditorTileAction={editor.handleEditorTileAction}
@@ -516,7 +541,7 @@ function App() {
             <TaskBoard
               agentTasks={agentTasks}
               selectedAgent={selectedAgent}
-              onFocusAgent={handleClick}
+              onSelectAgent={handleSelectAgentFromPanel}
               belowTooltip={hooksTooltipVisible}
             />
           )}
