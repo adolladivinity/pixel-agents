@@ -145,8 +145,12 @@ export class AgentCards {
   private draw(holderId: string, holder: Holder, isLead: boolean, previousCardId?: string) {
     const assigner = this.resolve();
     if (!assigner) return undefined;
+    // The same holder announcing itself again (a background spawn re-sends its tool start every
+    // turn) changes nothing; notifying would raise the listener's holder count past the one drop.
+    const repeat = this.holders.get(holderId)?.info.key === holder.info.key;
     const assignment = assigner.assign(holder.info.key, { isLead, previousCardId });
     this.holders.set(holderId, holder);
+    if (repeat) return assignment;
     this.notify(() => this.opts.listener?.assigned?.({ ...holder.info, assignment }));
     return assignment;
   }

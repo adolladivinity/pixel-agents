@@ -449,6 +449,16 @@ describe('roster wiring', () => {
       store.broadcast({ type: 'agentToolDone', id: 1, toolId: 'toolu_task' });
       expect(onDisk(subCard).tasksCompleted).toBe(0);
     });
+
+    it('a re-sent tool start (background spawns repeat every turn) does not leak after done', () => {
+      addLead();
+      startTask();
+      startTask(); // same tool id again
+      store.broadcast({ type: 'agentToolDone', id: 1, toolId: 'toolu_task' });
+      const internals = roster as unknown as { byTool: Map<string, string> };
+      expect(internals.byTool.size).toBe(0);
+      expect(roster.snapshotMessages().some((m) => m.parentToolId === 'toolu_task')).toBe(false);
+    });
   });
 
   describe('panel selection', () => {
