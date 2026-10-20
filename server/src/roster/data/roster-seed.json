@@ -1,0 +1,242 @@
+[
+  {
+    "id": "sales-rep",
+    "spriteIndex": 0,
+    "name": "Phil B.",
+    "role": "Sales Representative",
+    "department": "Sales",
+    "favoriteFact": "Believes the vending machine owes him an apology."
+  },
+  {
+    "id": "office-administrator",
+    "spriteIndex": 1,
+    "name": "Nellie B.",
+    "role": "Office Administrator",
+    "department": "Administration",
+    "favoriteFact": "Has labelled every drawer, including the one labelled \"Drawer\"."
+  },
+  {
+    "id": "warehouse-foreman",
+    "spriteIndex": 2,
+    "name": "Darryl P.",
+    "role": "Warehouse Foreman",
+    "department": "Warehouse",
+    "favoriteFact": "Once stacked forty pallets and called it a skyline."
+  },
+  {
+    "id": "benefits-coordinator",
+    "spriteIndex": 3,
+    "name": "Holly F.",
+    "role": "Benefits Coordinator",
+    "department": "Human Resources",
+    "favoriteFact": "Brings a spare pair of reading glasses for the printer."
+  },
+  {
+    "id": "loading-dock-associate",
+    "spriteIndex": 4,
+    "name": "Roy A.",
+    "role": "Loading Dock Associate",
+    "department": "Warehouse",
+    "favoriteFact": "Has strong opinions about forklift parking."
+  },
+  {
+    "id": "corporate-account-executive",
+    "spriteIndex": 5,
+    "name": "Jan L.",
+    "role": "Corporate Account Executive",
+    "department": "Corporate",
+    "favoriteFact": "Rehearses every email aloud before hitting send."
+  },
+  {
+    "id": "regional-manager",
+    "spriteIndex": 6,
+    "name": "Mike S.",
+    "role": "Regional Manager",
+    "department": "Management",
+    "favoriteFact": "Has a \"World's Okayest Boss\" mug and refuses to change it."
+  },
+  {
+    "id": "assistant-to-manager",
+    "spriteIndex": 7,
+    "name": "Dwight K.",
+    "role": "Assistant to the Manager",
+    "department": "Management",
+    "favoriteFact": "Keeps a beet in the desk drawer for emergencies."
+  },
+  {
+    "id": "prankster",
+    "spriteIndex": 8,
+    "name": "Jimmy H.",
+    "role": "Sales Representative",
+    "department": "Sales",
+    "favoriteFact": "Can balance a stapler on any surface, on a bet."
+  },
+  {
+    "id": "receptionist",
+    "spriteIndex": 9,
+    "name": "Pammy B.",
+    "role": "Receptionist",
+    "department": "Reception",
+    "favoriteFact": "Has never once lost a staring contest with the copier."
+  },
+  {
+    "id": "head-of-accounting",
+    "spriteIndex": 10,
+    "name": "Angela M.",
+    "role": "Head of Accounting",
+    "department": "Accounting",
+    "favoriteFact": "Alphabetizes the snack cupboard every Friday."
+  },
+  {
+    "id": "chili-chef",
+    "spriteIndex": 11,
+    "name": "Kevin M.",
+    "role": "Accounting Specialist",
+    "department": "Accounting",
+    "favoriteFact": "Makes a famous pot of chili once a year and talks about it for eleven months."
+  },
+  {
+    "id": "crossword-champ",
+    "spriteIndex": 12,
+    "name": "Stan H.",
+    "role": "Senior Sales Representative",
+    "department": "Sales",
+    "favoriteFact": "Finishes the crossword before the coffee finishes brewing."
+  },
+  {
+    "id": "mystery-man",
+    "spriteIndex": 13,
+    "name": "Creed B.",
+    "role": "Quality Assurance Lead",
+    "department": "Quality Assurance",
+    "favoriteFact": "Nobody remembers hiring him, and he prefers it that way."
+  },
+  {
+    "id": "customer-service-star",
+    "spriteIndex": 14,
+    "name": "Kelly K.",
+    "role": "Customer Service Representative",
+    "department": "Customer Service",
+    "favoriteFact": "Knows every ringtone in the building by heart."
+  },
+  {
+    "id": "nard-dog",
+    "spriteIndex": 15,
+    "name": "Andy B.",
+    "role": "Sales Representative",
+    "department": "Sales",
+    "favoriteFact": "Sings the hold music along with the caller."
+  },
+  {
+    "id": "voice-of-reason",
+    "spriteIndex": 16,
+    "name": "Oscar M.",
+    "role": "Senior Accountant",
+    "department": "Accounting",
+    "favoriteFact": "Is the only one who has read the whole spreadsheet."
+  },
+  {
+    "id": "hr-guy",
+    "spriteIndex": 17,
+    "name": "Toby F.",
+    "role": "Human Resources Representative",
+    "department": "Human Resources",
+    "favoriteFact": "Keeps a laminated flowchart for every possible meeting."
+  },
+  {
+    "id": "temp",
+    "spriteIndex": 18,
+    "name": "Ryan H.",
+    "role": "Temporary Associate",
+    "department": "Temps",
+    "favoriteFact": "Started as a temp and now owns a very comfortable chair."
+  },
+  {
+    "id": "party-planner",
+    "spriteIndex": 19,
+    "name": "Phyllis V.",
+    "role": "Party Planning Chair",
+    "department": "Events",
+    "favoriteFact": "Has a binder for the binder committee."
+  },
+  {
+    "id": "wild-card",
+    "spriteIndex": 20,
+    "name": "Meredith P.",
+    "role": "Supplier Relations Representative",
+    "department": "Supplier Relations",
+    "favoriteFact": "Wears a different hat for every kind of deadline."
+  },
+  {
+    "id": "new-receptionist",
+    "spriteIndex": 21,
+    "name": "Erin H.",
+    "role": "Receptionist",
+    "department": "Reception",
+    "favoriteFact": "Greets the front door like an old friend."
+  },
+  {
+    "id": "mailroom-clerk",
+    "spriteIndex": 22,
+    "name": "Clark G.",
+    "role": "Mailroom Clerk",
+    "department": "Mailroom",
+    "favoriteFact": "Has sorted the mailroom by colour, size, and mood."
+  },
+  {
+    "id": "it-support-specialist",
+    "spriteIndex": 23,
+    "name": "Nate N.",
+    "role": "IT Support Specialist",
+    "department": "IT",
+    "favoriteFact": "Fixes problems by turning them off and on again, then blaming the cloud."
+  },
+  {
+    "id": "consultant",
+    "spriteIndex": 24,
+    "name": "Charles M.",
+    "role": "Consultant",
+    "department": "Consulting",
+    "favoriteFact": "Gives advice that is always \"circle back next quarter\"."
+  },
+  {
+    "id": "regional-sales-director",
+    "spriteIndex": 25,
+    "name": "Jo B.",
+    "role": "Regional Sales Director",
+    "department": "Sales",
+    "favoriteFact": "Practices the big presentation in the elevator."
+  },
+  {
+    "id": "sales-trainee",
+    "spriteIndex": 26,
+    "name": "Deangelo V.",
+    "role": "Sales Trainee",
+    "department": "Sales",
+    "favoriteFact": "Has a lucky pen that has never been lucky."
+  },
+  {
+    "id": "assistant-regional-manager",
+    "spriteIndex": 27,
+    "name": "Karen F.",
+    "role": "Assistant Regional Manager",
+    "department": "Management",
+    "favoriteFact": "Schedules meetings about scheduling meetings."
+  },
+  {
+    "id": "field-sales-representative",
+    "spriteIndex": 28,
+    "name": "Todd P.",
+    "role": "Field Sales Representative",
+    "department": "Sales",
+    "favoriteFact": "Drives a company car and names every one of them."
+  },
+  {
+    "id": "chief-executive",
+    "spriteIndex": 29,
+    "name": "Robert C.",
+    "role": "Chief Executive",
+    "department": "Executive",
+    "favoriteFact": "Signs off every memo with a tiny drawing of a cat."
+  }
+]

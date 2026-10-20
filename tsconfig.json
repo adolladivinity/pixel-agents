@@ -6,6 +6,7 @@
 			"ES2022"
 		],
 		"sourceMap": true,
+		"resolveJsonModule": true,
 		"rootDir": ".",
 		"strict": true,
 		"skipLibCheck": true,
