@@ -169,7 +169,12 @@ export class RosterStore {
       const existing = data.inUse[cardId];
       const t = this.now();
       if (existing && t - existing.heartbeatAt < CLAIM_STALE_MS) {
-        const sameAgent = existing.processId === this.processId && existing.agentKey === agentKey;
+        // The same session id may take over another process's fresh claim: after an unclean
+        // shutdown the dead window's claim looks alive for 60 s, and reopening VS Code in that
+        // window must give restored agents their cards back. A different session never does.
+        const sameAgent =
+          existing.agentKey === agentKey &&
+          (agentKey !== '' || existing.processId === this.processId);
         if (!sameAgent) return false;
       }
       data.inUse[cardId] = { processId: this.processId, agentKey, heartbeatAt: t };

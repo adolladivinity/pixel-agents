@@ -452,3 +452,29 @@ describe('RosterStore durability and backup', () => {
     expect(corruptCopies()).toHaveLength(1);
   });
 });
+
+describe('RosterStore claim takeover after an unclean shutdown', () => {
+  it('a fresh claim from another process for the same session is taken over', () => {
+    const dead = store('dead', () => 0);
+    expect(dead.tryClaim('x', 'session-1')).toBe(true);
+    const reopened = store('new', () => 5_000);
+    expect(reopened.tryClaim('x', 'session-1')).toBe(true);
+    expect(dead.claimedByOthers().has('x')).toBe(true);
+    expect(reopened.claimedByOthers().has('x')).toBe(false);
+  });
+
+  it('a fresh claim for a different session still blocks', () => {
+    const a = store('A', () => 0);
+    expect(a.tryClaim('x', 'session-1')).toBe(true);
+    const b = store('B', () => 5_000);
+    expect(b.tryClaim('x', 'session-2')).toBe(false);
+    expect(b.claimedByOthers().has('x')).toBe(true);
+  });
+
+  it('an empty agent key never matches, so unrelated claims are not taken over', () => {
+    const a = store('A', () => 0);
+    expect(a.tryClaim('x', '')).toBe(true);
+    const b = store('B', () => 5_000);
+    expect(b.tryClaim('x', '')).toBe(false);
+  });
+});
