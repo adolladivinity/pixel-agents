@@ -9,3 +9,18 @@ export interface CardDef {
   department: string;
   favoriteFact: string;
 }
+
+/** Persisted per-card numbers. Never reset, never goes down. Timestamps are ISO strings ('' = never seen). */
+export interface CardStats {
+  xp: number;
+  workedSeconds: number;
+  tasksCompleted: number;
+  lifetimeTokens: number;
+  firstSeen: string;
+  lastSeen: string;
+}
+
+/** Amounts to add to a card's stats. Negative values are ignored by the store. */
+export type CardDelta = Partial<
+  Pick<CardStats, 'xp' | 'workedSeconds' | 'tasksCompleted' | 'lifetimeTokens'>
+>;
