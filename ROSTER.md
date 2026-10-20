@@ -216,8 +216,8 @@ Resolution kept both sides (upstream's `directories`/terminal props and #393's T
 - `webview-ui/src/office/sprites/cardSprite.ts` `spriteForCard(spriteIndex, loadedCount)` returns `{ sheet, hueShift }`: the card's own sheet when loaded, else
   bundled sheet `spriteIndex % 6` with hue `(spriteIndex * 47) % 360` (stable per index). Test: `webview-ui/test/cardSprite.test.ts`.
 - Wiring: the office character now looks like its card. `useExtensionMessages` calls `OfficeState.setCardLook(id, parentToolId, card.spriteIndex | null)` on every
-  `agentRoster` (null for a temp, so temps keep the server-picked palette/hue). `OfficeState` keeps the index in `cardLooks` and resolves it with `spriteForCard`
-  when the roster message arrives before or after the character is created, and again via `refreshCardLooks()` when `characterSpritesLoaded` lands. Sub-agents
+  `agentRoster` (`'temp'` for a temp). `OfficeState` keeps the index in `cardLooks` and resolves it with `spriteForCard`
+  when the roster message arrives before or after the character is created, and again via `refreshCardLooks()` when `characterSpritesLoaded` lands. A Temp (`agentRoster.temp`) gets `spriteForTemp(seed)`: a bundled sheet (index < 6) with a hue of 45-315 degrees, derived from the agent id (a string hash for a sub-agent), so it differs per agent and can never equal a loaded card's look (those always have hue 0). Sub-agents
   ("Subtask" characters) use their own card; with none they still inherit the parent's look. `RosterPanel` face uses `spriteForCard` too. Test: `webview-ui/test/cardLook.test.ts`.
   The palette/hue the server sends in `agentCreated` is unchanged (still the upstream diversity pick); the card look overrides it in the webview and is persisted by the
   usual `saveAgentSeats`, so a restored agent briefly shows the saved look until its roster message arrives.

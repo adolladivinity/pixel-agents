@@ -947,13 +947,14 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentRoster') {
         const record = msg as AgentRoster;
         if (typeof record.id !== 'number') return;
-        // The character in the office looks like its card; a temp keeps the
-        // palette and hue the server picked. OfficeState remembers the look, so
-        // this works whether it arrives before or after the character exists.
+        // The character in the office looks like its card; a temp gets a
+        // hue-shifted bundled sprite so it never matches a real card. OfficeState
+        // remembers the look, so this works whether it arrives before or after the
+        // character exists.
         os.setCardLook(
           record.id,
           record.parentToolId,
-          !record.temp && record.card ? record.card.spriteIndex : null,
+          !record.temp && record.card ? record.card.spriteIndex : 'temp',
         );
         // Keyed, not looked up against live characters: this can arrive before
         // the agentCreated / sub-character it describes.

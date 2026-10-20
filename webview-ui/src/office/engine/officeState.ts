@@ -27,7 +27,7 @@ import {
   layoutToTileMap,
 } from '../layout/layoutSerializer.js';
 import { findPath, getWalkableTiles, isWalkable } from '../layout/tileMap.js';
-import { spriteForCard } from '../sprites/cardSprite.js';
+import { spriteForCard, spriteForTemp } from '../sprites/cardSprite.js';
 import { getPetCount, getPetName } from '../sprites/petSpriteData.js';
 import { getLoadedCharacterCount } from '../sprites/spriteData.js';
 import type {
@@ -64,6 +64,14 @@ function seatFacingOffset(direction: Direction): { dCol: number; dRow: number } 
   if (direction === Direction.LEFT) return { dCol: -1, dRow: 0 };
   if (direction === Direction.DOWN) return { dCol: 0, dRow: 1 };
   return { dCol: 0, dRow: -1 };
+}
+
+/** Seed for a Temp's look: the agent id, or a string hash for a sub-agent key ("parent:tool"). */
+function tempSeed(key: string): number {
+  if (!key.includes(':')) return Number(key);
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) | 0;
+  return h;
 }
 
 export class OfficeState {
@@ -106,9 +114,9 @@ export class OfficeState {
    * Roster-card sprite index by holder ("<agentId>" or "<parentId>:<toolId>"). `agentRoster` can
    * arrive before or after the character exists, and before or after the character sheets load,
    * so the index is kept here and resolved (`spriteForCard`) whenever it is applied.
-   * A temp has no entry and keeps the palette and hue the server picked.
+   * A temp is stored as 'temp' and gets a bundled sheet with a non-zero hue (`spriteForTemp`).
    */
-  private cardLooks: Map<string, number> = new Map();
+  private cardLooks: Map<string, number | 'temp'> = new Map();
 
   /** Tiles an agent can stand on to write on the task board, nearest side
    *  first, each with the direction it faces from there. Empty when the office
@@ -687,7 +695,10 @@ export class OfficeState {
   private cardLookFor(key: string): { palette: number; hueShift: number } | null {
     const spriteIndex = this.cardLooks.get(key);
     if (spriteIndex === undefined) return null;
-    const { sheet, hueShift } = spriteForCard(spriteIndex, getLoadedCharacterCount());
+    const { sheet, hueShift } =
+      spriteIndex === 'temp'
+        ? spriteForTemp(tempSeed(key))
+        : spriteForCard(spriteIndex, getLoadedCharacterCount());
     return { palette: sheet, hueShift };
   }
 
@@ -704,17 +715,18 @@ export class OfficeState {
   }
 
   /**
-   * Make a character look like its roster card, or (null, a temp) leave it as the server drew it.
+   * Make a character look like its roster card (a sprite index), give a Temp its hue-shifted
+   * bundled look ('temp'), or forget the look (null).
    * Addressed like `agentRoster`: a top-level agent by id, a Task-tool sub-agent by parent id +
    * tool id. Safe to call before the character exists; it is applied when it is created.
    */
-  setCardLook(id: number, parentToolId: string | undefined, spriteIndex: number | null): void {
+  setCardLook(id: number, parentToolId: string | undefined, look: number | 'temp' | null): void {
     const key = parentToolId ? `${id}:${parentToolId}` : String(id);
-    if (spriteIndex === null) {
+    if (look === null) {
       this.cardLooks.delete(key);
       return;
     }
-    this.cardLooks.set(key, spriteIndex);
+    this.cardLooks.set(key, look);
     this.applyCardLook(key);
   }
 

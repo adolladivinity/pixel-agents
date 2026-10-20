@@ -31,13 +31,44 @@ test('a look that arrives before the agent is applied when it is created', () =>
   assert.equal(ch.hueShift, 0);
 });
 
-test('an agent without a look keeps the palette it was given (a temp)', () => {
+test('a temp gets a bundled sheet with a non-zero hue, not the server pick', () => {
   const os = new OfficeState();
-  os.addAgent(3, 1, 120);
-  os.setCardLook(3, undefined, null);
+  os.addAgent(3, 1, 0);
+  os.setCardLook(3, undefined, 'temp');
   const ch = os.characters.get(3)!;
-  assert.equal(ch.palette, 1);
-  assert.equal(ch.hueShift, 120);
+  assert.ok(ch.palette >= 0 && ch.palette < 6);
+  assert.notEqual(ch.hueShift, 0);
+});
+
+test('two temps look different from each other', () => {
+  const os = new OfficeState();
+  os.addAgent(3, 0, 0);
+  os.addAgent(4, 0, 0);
+  os.setCardLook(3, undefined, 'temp');
+  os.setCardLook(4, undefined, 'temp');
+  const a = os.characters.get(3)!;
+  const b = os.characters.get(4)!;
+  assert.notDeepEqual([a.palette, a.hueShift], [b.palette, b.hueShift]);
+});
+
+test('a temp never looks like a loaded card, even a card with a bundled sheet', () => {
+  const os = new OfficeState();
+  os.addAgent(9, 0, 0);
+  os.addAgent(10, 0, 0);
+  os.setCardLook(9, undefined, 'temp');
+  for (let card = 0; card < 6; card++) {
+    os.setCardLook(10, undefined, card);
+    const t = os.characters.get(9)!;
+    const c = os.characters.get(10)!;
+    assert.notDeepEqual([t.palette, t.hueShift], [c.palette, c.hueShift]);
+  }
+});
+
+test('a temp look that arrives before the agent is applied at creation', () => {
+  const os = new OfficeState();
+  os.setCardLook(5, undefined, 'temp');
+  os.addAgent(5, 2, 0);
+  assert.notEqual(os.characters.get(5)!.hueShift, 0);
 });
 
 test('a sub-agent takes its own card look, not the parent look', () => {

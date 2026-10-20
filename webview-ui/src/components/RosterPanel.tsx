@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import type { AgentRoster } from '../../../core/src/messages.js';
-import { spriteForCard } from '../office/sprites/cardSprite.js';
+import { spriteForCard, spriteForTemp } from '../office/sprites/cardSprite.js';
 import { getLoadedCharacterCount } from '../office/sprites/spriteData.js';
 import { CharacterMugShot } from './CharacterMugShot.js';
 import {
@@ -66,6 +66,12 @@ function Stat({ value, label, testId }: { value: string; label: string; testId?:
   );
 }
 
+/** Fallback face for a temp whose office character is not there to read the look from. */
+function tempFace(id: number): { palette: number; hueShift: number } {
+  const { sheet, hueShift } = spriteForTemp(id);
+  return { palette: sheet, hueShift };
+}
+
 /**
  * The roster side panel: who the clicked character is and what they are doing.
  *
@@ -90,7 +96,7 @@ export function RosterPanel({ data, appearance, variant, onClose }: RosterPanelP
     !isTemp && card !== null ? spriteForCard(card.spriteIndex, getLoadedCharacterCount()) : null;
   const face = cardFace
     ? { palette: cardFace.sheet, hueShift: cardFace.hueShift }
-    : (appearance ?? { palette: 0, hueShift: 0 });
+    : (appearance ?? tempFace(data?.id ?? 0));
 
   const frame =
     variant === 'dock'

@@ -31,3 +31,22 @@ export function spriteForCard(spriteIndex: number, loadedCount: number): CardSpr
     hueShift: mod(index * FALLBACK_HUE_STEP_DEG, 360),
   };
 }
+
+/** Temp hue range: never 0 (a loaded card sheet always has hue 0), never under 45 degrees. */
+const TEMP_HUE_MIN_DEG = 45;
+const TEMP_HUE_RANGE_DEG = 271; // prime, so seeds a multiple of 6 apart rarely collide
+const TEMP_HUE_STEP = 61;
+
+/**
+ * The look of a Temp (pool exhausted, no card): a bundled sheet with a non-zero
+ * hue shift, a pure function of `seed` (the agent id) so it is stable across
+ * messages and clients, and different for different agents. A card's own look
+ * for a loaded sheet always has hue 0, so a Temp can never be mistaken for one.
+ */
+export function spriteForTemp(seed: number): CardSprite {
+  const s = Number.isInteger(seed) ? seed : 0;
+  return {
+    sheet: mod(s, PALETTE_COUNT),
+    hueShift: TEMP_HUE_MIN_DEG + mod(s * TEMP_HUE_STEP, TEMP_HUE_RANGE_DEG),
+  };
+}

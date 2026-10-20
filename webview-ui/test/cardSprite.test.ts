@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { spriteForCard } from '../src/office/sprites/cardSprite.js';
+import { spriteForCard, spriteForTemp } from '../src/office/sprites/cardSprite.js';
 
 describe('spriteForCard', () => {
   it('returns the card sprite unchanged when it is loaded', () => {
@@ -32,5 +32,38 @@ describe('spriteForCard', () => {
   it('treats a missing or invalid index as unloaded, never as a sheet', () => {
     expect(spriteForCard(-1, 22).sheet).toBeGreaterThanOrEqual(0);
     expect(spriteForCard(-1, 22).sheet).toBeLessThan(6);
+  });
+});
+
+describe('spriteForTemp', () => {
+  it('is a bundled sheet with a non-zero hue, the same every time', () => {
+    for (let id = -5; id < 200; id++) {
+      const look = spriteForTemp(id);
+      expect(look.sheet).toBeGreaterThanOrEqual(0);
+      expect(look.sheet).toBeLessThan(6);
+      expect(look.hueShift).toBeGreaterThanOrEqual(45);
+      expect(look.hueShift).toBeLessThan(360);
+      expect(spriteForTemp(id)).toEqual(look);
+    }
+  });
+
+  it('gives different agents different looks', () => {
+    const seen = new Set<string>();
+    for (let id = 1; id <= 40; id++) {
+      const { sheet, hueShift } = spriteForTemp(id);
+      seen.add(`${sheet}:${hueShift}`);
+    }
+    expect(seen.size).toBe(40);
+  });
+
+  it('never matches the look of a loaded card', () => {
+    for (let loaded = 6; loaded <= 40; loaded++) {
+      for (let card = 0; card < loaded; card++) {
+        const own = spriteForCard(card, loaded);
+        for (let id = 1; id <= 60; id++) {
+          expect(spriteForTemp(id)).not.toEqual(own);
+        }
+      }
+    }
   });
 });
