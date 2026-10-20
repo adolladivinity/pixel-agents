@@ -381,11 +381,15 @@ export class Roster implements RosterSink {
   }
 
   /** One record from a transcript: keeps the key active and adds its tokens to the key's card. */
-  private count(key: string, counterKey: string, record: unknown): void {
+  private count(key: string, transcriptCounterKey: string, record: unknown): void {
     const core = this.core;
     const entry = this.entries.get(key);
     if (!core || !entry) return;
     core.tracker.activity(key, this.now());
+    // A sub-agent can be seen in two streams at once (agent_progress records on the lead, and its
+    // own watched sidecar transcript). Both feed this card, so they share one counter and a message
+    // id seen in both counts once. A lead has a single stream per transcript file.
+    const counterKey = entry.isLead ? transcriptCounterKey : `card:${key}`;
     let counter = this.counters.get(counterKey);
     if (!counter) {
       counter = new TokenCounter();

@@ -263,6 +263,39 @@ describe('roster wiring', () => {
     expect(sub.card?.id).not.toBe(parent.card?.id);
   });
 
+  it('counts a sub-agent message once when it shows up in both the agent_progress and sidecar streams', () => {
+    addLead();
+    const shadow = runtime.subagentWatch.store;
+    shadow.set(
+      1_000_000,
+      createAgentState({
+        id: 1_000_000,
+        sessionId: 'sess-1',
+        isExternal: true,
+        projectDir: tmpDir,
+        jsonlFile: path.join(tmpDir, 'sub.jsonl'),
+        leadAgentId: 1,
+        spawnToolUseId: 'toolu_both',
+      }),
+    );
+    // The parser only follows progress records of a live sub-agent spawn tool call.
+    store.get(1)!.activeToolNames.set('toolu_both', 'Task');
+    const same = assistant('msg_shared', { input_tokens: 100, output_tokens: 50 });
+    const other = assistant('msg_other', { input_tokens: 8, output_tokens: 2 });
+    // The sidecar stream (shadow store) and the embedded stream (progress record on the lead).
+    line(1_000_000, same, shadow);
+    line(1, {
+      type: 'progress',
+      parentToolUseID: 'toolu_both',
+      data: { type: 'agent_progress', message: same },
+    });
+    expect(view(1, 'toolu_both').stats.lifetimeTokens).toBe(150);
+    // A different message id in either stream still counts.
+    line(1_000_000, other, shadow);
+    expect(view(1, 'toolu_both').stats.lifetimeTokens).toBe(160);
+    expect(view(1).stats.lifetimeTokens).toBe(0);
+  });
+
   it('sidechain records inlined in a lead transcript are not credited to the lead', () => {
     addLead();
     line(1, assistant('msg_main', { input_tokens: 4, output_tokens: 1 }));
