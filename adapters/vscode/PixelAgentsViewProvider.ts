@@ -57,7 +57,7 @@ import {
   hookProviderById,
   hookProviders,
 } from '../../server/src/providers/index.js';
-import { createDefaultCardAssigner } from '../../server/src/roster/defaultAssigner.js';
+import { createRoster, parsePanelSelection } from '../../server/src/roster/index.js';
 import { PixelAgentsServer } from '../../server/src/server.js';
 import {
   getProjectDirPath,
@@ -198,7 +198,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 
     // Create shared runtime (owns timer Maps, scanners, hook handler, dismissal tracker)
     this.runtime = new AgentRuntime(this.store, claudeProvider, {
-      cardAssigner: createDefaultCardAssigner,
+      roster: createRoster(),
     });
 
     this.initServer();
@@ -459,6 +459,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     // sendCurrentAgentStatuses + asset loaders).
     this.isWebviewReady = false;
     this.pendingBroadcasts = [];
+    // A fresh iframe has no roster panel open (see the rosterPanelSelect handler).
+    this.runtime.clearRosterPanelSelection(this);
     webviewView.webview.options = { enableScripts: true };
     webviewView.webview.html = getWebviewContent(webviewView.webview, this.extensionUri);
 
@@ -505,6 +507,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
             }
           }
         }
+      } else if (message.type === 'rosterPanelSelect') {
+        // One webview per window: its selection is keyed by the view itself.
+        this.runtime.setRosterPanelSelection(this, parsePanelSelection(message));
       } else if (message.type === 'closeAgent') {
         const agent = this.store.get(message.id);
         if (agent) {
@@ -855,7 +860,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
               if (this.webview) {
                 sendLayout(this.webview, this.defaultLayout);
                 // Send agent statuses AFTER layoutLoaded so characters exist when messages arrive
-                sendCurrentAgentStatuses(this.store, this.webview);
+                sendCurrentAgentStatuses(this.store, this.webview, this.runtime.rosterMessages());
                 this.startLayoutWatcher();
               }
               return;
@@ -919,7 +924,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
             console.log('[Extension] Sending saved layout');
             sendLayout(this.webview, this.defaultLayout);
             // Send agent statuses AFTER layoutLoaded so characters exist when messages arrive
-            sendCurrentAgentStatuses(this.store, this.webview);
+            sendCurrentAgentStatuses(this.store, this.webview, this.runtime.rosterMessages());
             this.startLayoutWatcher();
           }
         })();

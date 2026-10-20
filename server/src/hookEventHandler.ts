@@ -3,6 +3,7 @@ import * as path from 'path';
 import type { AgentEvent, HookProvider } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import { SESSION_END_GRACE_MS } from './constants.js';
+import type { RosterSink } from './roster/sink.js';
 import type { SessionRouter } from './sessionRouter.js';
 import { getInlineTeammates, hasInlineTeammates, hasPromotedBackgroundAgent } from './teamUtils.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from './timerManager.js';
@@ -58,6 +59,8 @@ interface SessionLifecycleCallbacks {
 
 export class HookEventHandler {
   private lifecycleCallbacks: SessionLifecycleCallbacks = {};
+  /** Roster bookkeeping (prompt/Stop/activity). Absent when the host runs without a roster. */
+  private roster: RosterSink | undefined;
 
   /** Highest HookProvider.protocolVersion this handler understands. */
   private static readonly SUPPORTED_PROTOCOL_VERSION = 1;
@@ -99,6 +102,11 @@ export class HookEventHandler {
     return [...this.agents.values()].some(
       (a) => path.resolve(a.projectDir).toLowerCase() === path.resolve(projectDir).toLowerCase(),
     );
+  }
+
+  /** Tell the roster about every hook event delivered to an agent. */
+  setRoster(roster: RosterSink | undefined): void {
+    this.roster = roster;
   }
 
   /** Set callbacks for session lifecycle events (SessionStart/SessionEnd). */
@@ -321,6 +329,8 @@ export class HookEventHandler {
     if (!agent) return;
 
     agent.hookDelivered = true;
+    // Roster: every delivered event is activity; promptSubmit/turnEnd also open/close a task.
+    this.roster?.hookEvent(agentId, agent, normEvent.kind);
     if (debug)
       console.log(
         `[Pixel Agents] Hook: Agent ${agentId} - ${eventName} (session=${event.session_id.slice(0, 8)}...)`,
@@ -361,6 +371,9 @@ export class HookEventHandler {
           return this.handleTaskCompleted(event, agentId);
         }
         return this.handleTeammateIdle(event, agent, agentId);
+      case 'promptSubmit':
+        // Consumed above, by the roster (task start). Nothing to show in the office.
+        return;
       case 'progress':
         // Not yet consumed by the office visualization. Silently drop.
         return;

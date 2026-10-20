@@ -164,3 +164,22 @@ PR #393 conflicted with upstream's directory launch surface, mobile shell, and t
 `App.tsx`, `BottomToolbar.tsx`, `useExtensionMessages.ts`, `OfficeCanvas.tsx`, and the generated e2e inventory.
 Resolution kept both sides (upstream's `directories`/terminal props and #393's Tasks toggle; `omitKey` for
 `agentTasks` cleanup on `agentClosed`; `onAgentSelectionChange` also fired on the mobile first-tap path).
+
+## Roster wiring (Task 8)
+
+- `server/src/roster/index.ts`: `createRoster(opts)` returns a `Roster`. Everything (stats file, assigner, tracker, the 1 s tick /
+  10 s flush / 20 s heartbeat timers) is created on the first card, so a run with no agents opens nothing. Tests pass
+  `{ filePath: <temp>, timers: false, now: () => clock }` and call `roster.tick()` themselves.
+- `AgentRuntime(store, provider, { roster })` is the production seam (VS Code `PixelAgentsViewProvider`, `cli.ts`). The older
+  `{ cardAssigner }` option still exists for tests that only exercise card draw and release. `runtime.dispose()` disposes the roster
+  (final flush, timers off), which covers both server shutdown and VS Code `deactivate`.
+- Inputs: `AgentCards` calls `roster.cardsListener` (card gained/lost; the key's final settle and flush happen before the card is
+  released); the main store's `broadcast` events drive status, tool text and permission; `hookEventHandler` calls `roster.hookEvent`
+  for every delivered hook event; `transcriptParser` calls `rosterSink` (`transcriptRecord`, `transcriptPrompt`, `subagentRecord`)
+  from the one line reader. No new file watcher. `subagentWatch.ts` needed no change: its shadow store is attached to `AgentCards`.
+- Task counting: a task is counted at its end, from one source per agent (Stop hook once hooks are delivering, else the JSONL
+  heuristic's `waiting` status). The current hook installer does NOT subscribe to `UserPromptSubmit` (privacy decision, see
+  `CLAUDE_HOOK_EVENTS`), so in practice a turn starts from the transcript's user prompt; a stale install that still POSTs
+  `UserPromptSubmit` is normalized to `promptSubmit` and also starts a task.
+- Messages: `agentRoster` (server to client) and `rosterPanelSelect` (client to server), see `core/asyncapi.yaml`. Addressing:
+  `id` + optional `parentToolId` (see the schema description). Replayed to new clients via `resendAgentActivity(send, store, rosterMessages)`.

@@ -10,10 +10,13 @@ import { hasPromotedBackgroundAgent } from './teamUtils.js';
  * 3. Background tools with runInBackground + isTeammateSpawn flags, skipping promoted spawns
  * 4. Waiting status
  * 5. Context usage
+ * 6. Task board
+ * 7. Roster cards (`rosterMessages`: the runtime's current `agentRoster` per card holder)
  */
 export function resendAgentActivity(
   send: (message: Record<string, unknown>) => void,
   store: AgentStateStore,
+  rosterMessages: Array<Record<string, unknown>> = [],
 ): void {
   for (const [id, agent] of store) {
     // 1. Team metadata first — webview uses this to route tool messages correctly.
@@ -108,4 +111,7 @@ export function resendAgentActivity(
       });
     }
   }
+
+  // 7. Roster cards, last: they address agents (and Subtask sub-characters) that now exist.
+  for (const message of rosterMessages) send(message);
 }

@@ -133,3 +133,26 @@ describe('TokenCounter.addLine', () => {
     expect(counter.addLine(line)).toEqual({ messageId: 'm', deltaTokens: 5 });
   });
 });
+
+describe('TokenCounter.addRecord', () => {
+  it('counts an already-parsed record the same way addLine does', () => {
+    const lines = fixtureLines('streamed-turn.jsonl');
+    const byLine = new TokenCounter();
+    const byRecord = new TokenCounter();
+    const viaLines = lines.reduce((sum, l) => sum + (byLine.addLine(l)?.deltaTokens ?? 0), 0);
+    const viaRecords = lines.reduce(
+      (sum, l) => sum + (byRecord.addRecord(JSON.parse(l))?.deltaTokens ?? 0),
+      0,
+    );
+    expect(viaRecords).toBe(viaLines);
+    expect(viaRecords).toBeGreaterThan(0);
+  });
+
+  it('returns null for things that are not records', () => {
+    const counter = new TokenCounter();
+    expect(counter.addRecord(null)).toBeNull();
+    expect(counter.addRecord('x')).toBeNull();
+    expect(counter.addRecord([])).toBeNull();
+    expect(counter.addRecord({ type: 'user' })).toBeNull();
+  });
+});

@@ -255,6 +255,7 @@ function registerWebSocketRoute(
           console.log('[Pixel Agents] WS client message:', msg.type);
         }
         handleClientMessage(msg, (m) => safeSend(socket, m), {
+          clientKey: socket,
           store,
           runtime: options.runtime,
           cache: options.assetCache ?? null,
@@ -269,6 +270,7 @@ function registerWebSocketRoute(
     });
 
     socket.on('close', () => {
+      options.runtime?.clearRosterPanelSelection(socket);
       store.off('agentAdded', onAgentAdded);
       store.off('agentRemoved', onAgentRemoved);
       store.off('broadcast', onBroadcast);

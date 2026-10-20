@@ -25,6 +25,7 @@ import type { ConsentEffects } from './providers/hook/consentExecutor.js';
 import { applyConsentChoice } from './providers/hook/consentExecutor.js';
 import { hooksConsentRequest } from './providers/hook/consentGate.js';
 import { claudeProvider, hookProviderById, hookProviders } from './providers/index.js';
+import { parsePanelSelection } from './roster/index.js';
 import type { PtySessionManager } from './terminal/ptySessionManager.js';
 import { launchStandaloneAgent } from './terminal/standaloneAgentLauncher.js';
 
@@ -71,6 +72,8 @@ export interface ClientMessageContext {
    * it gets the safe answer.
    */
   privileged?: boolean;
+  /** Identifies this connection, so a roster panel selection can be dropped when it closes. */
+  clientKey?: unknown;
   /** PTY terminals for standalone-launched agents. Absent in VS Code embedded
    *  mode, where the editor owns terminal lifecycle. */
   ptyManager?: PtySessionManager;
@@ -128,7 +131,9 @@ export function handleClientMessage(
   // Tokenless is read-only. Refused HERE, once, rather than per message, so a
   // message type added later is privileged by default instead of open until
   // someone remembers to gate it.
-  if (!ctx.privileged && msg.type !== 'webviewReady') {
+  // rosterPanelSelect only changes which agent's roster this connection is sent, so a
+  // read-only client may use it.
+  if (!ctx.privileged && msg.type !== 'webviewReady' && msg.type !== 'rosterPanelSelect') {
     refuseReadOnly(msg, send, ctx);
     return;
   }
@@ -136,6 +141,10 @@ export function handleClientMessage(
   switch (msg.type) {
     case 'webviewReady':
       handleWebviewReady(send, ctx);
+      break;
+
+    case 'rosterPanelSelect':
+      runtime?.setRosterPanelSelection(ctx.clientKey ?? send, parsePanelSelection(msg));
       break;
 
     case 'launchAgent': {
@@ -625,7 +634,7 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
   // 8. Agent state, AFTER layoutLoaded -- the characters they target only
   // exist once the layout flush creates them. Without this a reconnecting
   // client shows bare characters until each agent takes another turn.
-  resendAgentActivity(send, store);
+  resendAgentActivity(send, store, ctx.runtime?.rosterMessages());
 
   // 9. Re-announce live terminals AFTER existingAgents, so a browser that
   // reloaded (or a second tab) rebuilds its drawer tabs. The PTY outlives the

@@ -102,6 +102,8 @@ components:
         - $ref: '#/components/schemas/AgentContextUsage'
         # Tasks
         - $ref: '#/components/schemas/AgentTasks'
+        # Roster
+        - $ref: '#/components/schemas/AgentRoster'
         # Layout
         - $ref: '#/components/schemas/LayoutLoaded'
         # Assets
@@ -160,6 +162,7 @@ components:
         - $ref: '#/components/schemas/RemoveDirectory'
         - $ref: '#/components/schemas/RequestDirectorySuggestions'
         - $ref: '#/components/schemas/RequestDiagnostics'
+        - $ref: '#/components/schemas/RosterPanelSelect'
       discriminator: type
 
     # ── Server message variants ────────────────────────────────────
@@ -517,6 +520,123 @@ components:
             up), while a replay is only the client catching up on state it
             already missed. Without the distinction every agent with a board
             would march to the whiteboard on every panel reload.
+
+    AgentRoster:
+      description: |
+        The roster card an agent currently holds, its stats, and what it is doing
+        right now. The server owns every number (level, XP, time, tokens); the
+        client only formats them. Sent when a card is assigned, on every status or
+        tool change, and once per second for each agent a client has selected with
+        `rosterPanelSelect`. A new client gets one per card-holding agent on connect.
+
+        Addressing. `id` is the webview's agent id for a top-level session or a
+        teammate. For a foreground Task-tool sub-agent (the transient "Subtask"
+        character, which the webview gives a negative id of its own), `id` is the
+        PARENT agent's id and `parentToolId` is the spawning tool call's id; the
+        client finds the sub-character with its existing (id, parentToolId) lookup.
+        A message without `parentToolId` is never about a sub-character.
+      type: object
+      additionalProperties: false
+      required: [type, id, temp, isLead, card, level, stats, now]
+      properties:
+        type:
+          const: agentRoster
+        id:
+          type: integer
+        parentToolId:
+          type: string
+          description: Present only when the message is about a Task-tool sub-agent; see above.
+        temp:
+          type: boolean
+          description: True when the card pool was exhausted. A temp has `card` null and earns no XP.
+        isLead:
+          type: boolean
+          description: True for a top-level session, false for a sub-agent or teammate.
+        card:
+          oneOf:
+            - $ref: '#/components/schemas/RosterCard'
+            - type: 'null'
+        level:
+          $ref: '#/components/schemas/RosterLevel'
+        stats:
+          $ref: '#/components/schemas/RosterStats'
+        now:
+          $ref: '#/components/schemas/RosterNow'
+
+    RosterCard:
+      description: One fixed employee on the roster. `spriteIndex` is the position in the combined character list.
+      type: object
+      additionalProperties: false
+      required: [id, name, role, department, favoriteFact, spriteIndex]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        department:
+          type: string
+        favoriteFact:
+          type: string
+        spriteIndex:
+          type: integer
+
+    RosterLevel:
+      description: Level derived from lifetime XP. `xpToNext` is the XP the current level needs in total.
+      type: object
+      additionalProperties: false
+      required: [level, xpIntoLevel, xpToNext]
+      properties:
+        level:
+          type: integer
+        xpIntoLevel:
+          type: number
+        xpToNext:
+          type: number
+
+    RosterStats:
+      description: Lifetime numbers for the card. They never reset and never go down.
+      type: object
+      additionalProperties: false
+      required: [workedSeconds, tasksCompleted, lifetimeTokens]
+      properties:
+        workedSeconds:
+          type: number
+        tasksCompleted:
+          type: integer
+        lifetimeTokens:
+          type: integer
+
+    RosterStatus:
+      description: Whether the agent is working, waiting on the user, or idle.
+      type: string
+      enum: [working, waiting, idle]
+
+    RosterNow:
+      description: |
+        What the agent is doing right now. `status`: working, waiting (needs the user,
+        for a permission or input) or idle (turn finished, or nothing started yet).
+        `activity` is the tool status text already shown in the office, empty when
+        there is none. Times are epoch milliseconds; `taskEndedAt` is null while the
+        task is running and both are null before the first task. A sub-agent's task
+        is its whole run.
+      type: object
+      additionalProperties: false
+      required: [status, projectName, activity, taskStartedAt, taskEndedAt, taskTokens]
+      properties:
+        status:
+          $ref: '#/components/schemas/RosterStatus'
+        projectName:
+          type: string
+        activity:
+          type: string
+        taskStartedAt:
+          type: [integer, 'null']
+        taskEndedAt:
+          type: [integer, 'null']
+        taskTokens:
+          type: integer
 
     LayoutLoaded:
       description: |
@@ -1073,6 +1193,24 @@ components:
           const: closeAgent
         id:
           type: integer
+
+    RosterPanelSelect:
+      description: |
+        Tells the server which agent's roster panel the client has open, so it
+        sends that agent's `agentRoster` once per second. `agentId: null` closes
+        the panel. For a Task-tool sub-character send the PARENT agent's id plus
+        `parentToolId` (the same pair `agentRoster` uses). Allowed for read-only
+        clients; it only changes what the server sends back.
+      type: object
+      additionalProperties: false
+      required: [type, agentId]
+      properties:
+        type:
+          const: rosterPanelSelect
+        agentId:
+          type: [integer, 'null']
+        parentToolId:
+          type: string
 
     SaveAgentSeats:
       description: Persist seat assignments for current agents.

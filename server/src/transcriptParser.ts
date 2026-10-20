@@ -4,6 +4,7 @@ import type { HookProvider } from '../../core/src/provider.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import { TEXT_IDLE_DELAY_MS, TOOL_DONE_DELAY_MS } from './constants.js';
 import { updateContextUsage } from './contextUsage.js';
+import type { RosterSink } from './roster/sink.js';
 import { hasInlineTeammates, hasPromotedBackgroundAgent } from './teamUtils.js';
 import {
   cancelPermissionTimer,
@@ -41,6 +42,21 @@ export function setHookProvider(provider: HookProvider): void {
  *  (fileWatcher seeds context gauges before any line has been read). */
 export function getHookProvider(): HookProvider | null {
   return hookProvider;
+}
+
+/** Roster: counts tokens and turn starts from the lines read here. The line reader is the only
+ *  place transcripts are parsed, so the roster is fed from it rather than watching files itself.
+ *  Its methods never throw (they guard internally). Registered per runtime. */
+let rosterSink: RosterSink | null = null;
+
+export function setRosterSink(sink: RosterSink | null): void {
+  rosterSink = sink;
+}
+
+/** Clear the sink only if it is still the given one: a runtime being disposed must not unplug the one
+ *  that replaced it. */
+export function releaseRosterSink(sink: RosterSink): void {
+  if (rosterSink === sink) rosterSink = null;
 }
 
 /** Called when a lead's tool_result reports an async agent launch. The host
@@ -134,6 +150,8 @@ export function processTranscriptLine(
 
     // -- Context window usage (drives every agent's context gauge) --
     updateContextUsage(agentId, agent, agents, record, hookProvider);
+    // -- Roster: tokens + liveness (after the context gauge, which decides sidechain ownership) --
+    rosterSink?.transcriptRecord(agentId, agent, record);
 
     // Resilient content extraction: support both record.message.content and record.content
     // Claude Code may change the JSONL structure across versions
@@ -397,12 +415,14 @@ export function processTranscriptLine(
           }
         } else {
           // New user text prompt — new turn starting
+          rosterSink?.transcriptPrompt(agentId, agent);
           cancelWaitingTimer(agentId, waitingTimers);
           clearAgentActivity(agent, agentId, agents, permissionTimers);
           agent.hadToolsInTurn = false;
         }
       } else if (typeof content === 'string' && content.trim()) {
         // New user text prompt — new turn starting
+        rosterSink?.transcriptPrompt(agentId, agent);
         cancelWaitingTimer(agentId, waitingTimers);
         clearAgentActivity(agent, agentId, agents, permissionTimers);
         agent.hadToolsInTurn = false;
@@ -575,6 +595,8 @@ function processProgressRecord(
   if (!Array.isArray(content)) return;
 
   if (msgType === 'assistant') {
+    // Roster: the sub-agent's own usage belongs to the sub-agent's card, not this agent's.
+    rosterSink?.subagentRecord(agentId, agent, parentToolId, msg);
     let hasNonExemptSubTool = false;
     for (const block of content) {
       if (block.type === 'tool_use' && block.id) {

@@ -69,6 +69,14 @@ export class TokenCounter {
     } catch {
       return null;
     }
+    return this.addRecord(record);
+  }
+
+  /**
+   * Same as `addLine` for a record the caller has already parsed (the transcript reader
+   * parses every line once; this avoids a second parse). Never throws.
+   */
+  addRecord(record: unknown): TokenDelta | null {
     if (typeof record !== 'object' || record === null || Array.isArray(record)) return null;
 
     const { type, message } = record as { type?: unknown; message?: unknown };

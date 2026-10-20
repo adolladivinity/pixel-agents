@@ -51,6 +51,8 @@ export type AgentEvent =
     }
   | { kind: 'progress'; toolId: string; data: unknown }
   | { kind: 'permissionRequest' }
+  /** The user submitted a prompt: a new turn is starting. Carries no text, on purpose. */
+  | { kind: 'promptSubmit' }
   | {
       kind: 'sessionStart';
       source?: string;

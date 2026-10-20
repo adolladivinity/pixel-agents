@@ -548,9 +548,10 @@ export function sendExistingAgents(
 export function sendCurrentAgentStatuses(
   agents: AgentStateStore,
   webview: vscode.Webview | undefined,
+  rosterMessages: Array<Record<string, unknown>> = [],
 ): void {
   if (!webview) return;
-  resendAgentActivity((msg) => webview.postMessage(msg), agents);
+  resendAgentActivity((msg) => webview.postMessage(msg), agents, rosterMessages);
 }
 
 export function sendLayout(

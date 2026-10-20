@@ -26,6 +26,7 @@ export type ServerMessage =
   | AgentTeamInfo
   | AgentContextUsage
   | AgentTasks
+  | AgentRoster
   | LayoutLoaded
   | FurnitureAssetsLoaded
   | CharacterSpritesLoaded
@@ -76,7 +77,8 @@ export type ClientMessage =
   | SaveDirectory
   | RemoveDirectory
   | RequestDirectorySuggestions
-  | RequestDiagnostics;
+  | RequestDiagnostics
+  | RosterPanelSelect;
 
 export interface ProviderCapabilities {
   type: 'providerCapabilities';
@@ -216,6 +218,50 @@ export interface AgentTask {
 }
 
 export type AgentTaskStatus = 'pending' | 'in_progress' | 'completed';
+
+export interface AgentRoster {
+  type: 'agentRoster';
+  id: number;
+  parentToolId?: string;
+  temp: boolean;
+  isLead: boolean;
+  card: RosterCard | null;
+  level: RosterLevel;
+  stats: RosterStats;
+  now: RosterNow;
+}
+
+export interface RosterCard {
+  id: string;
+  name: string;
+  role: string;
+  department: string;
+  favoriteFact: string;
+  spriteIndex: number;
+}
+
+export interface RosterLevel {
+  level: number;
+  xpIntoLevel: number;
+  xpToNext: number;
+}
+
+export interface RosterStats {
+  workedSeconds: number;
+  tasksCompleted: number;
+  lifetimeTokens: number;
+}
+
+export interface RosterNow {
+  status: RosterStatus;
+  projectName: string;
+  activity: string;
+  taskStartedAt: number | null;
+  taskEndedAt: number | null;
+  taskTokens: number;
+}
+
+export type RosterStatus = 'working' | 'waiting' | 'idle';
 
 export interface LayoutLoaded {
   type: 'layoutLoaded';
@@ -530,4 +576,10 @@ export interface RequestDirectorySuggestions {
 
 export interface RequestDiagnostics {
   type: 'requestDiagnostics';
+}
+
+export interface RosterPanelSelect {
+  type: 'rosterPanelSelect';
+  agentId: number | null;
+  parentToolId?: string;
 }

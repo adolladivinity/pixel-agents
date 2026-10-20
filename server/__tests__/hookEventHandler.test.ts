@@ -980,4 +980,42 @@ describe('HookEventHandler', () => {
       }
     });
   });
+
+  // ── Roster sink ─────────────────────────────────────────────
+
+  describe('roster sink', () => {
+    function withSink() {
+      const calls: Array<{ agentId: number; kind: string }> = [];
+      handler.setRoster({
+        hookEvent: (agentId, _agent, kind) => calls.push({ agentId, kind }),
+        transcriptRecord: () => {},
+        subagentRecord: () => {},
+        transcriptPrompt: () => {},
+      });
+      agents.set(1, createTestAgent({ id: 1 }));
+      handler.registerAgent('sess-1', 1);
+      return calls;
+    }
+
+    it('UserPromptSubmit reaches the roster as promptSubmit', () => {
+      const calls = withSink();
+      handler.handleEvent('claude', { hook_event_name: 'UserPromptSubmit', session_id: 'sess-1' });
+      expect(calls).toEqual([{ agentId: 1, kind: 'promptSubmit' }]);
+      // Nothing is shown in the office for it.
+      expect(mockWebview.messages).toHaveLength(0);
+    });
+
+    it('Stop reaches the roster as turnEnd, and every delivered event counts as activity', () => {
+      const calls = withSink();
+      handler.handleEvent('claude', { hook_event_name: 'PostToolUse', session_id: 'sess-1' });
+      handler.handleEvent('claude', { hook_event_name: 'Stop', session_id: 'sess-1' });
+      expect(calls.map((c) => c.kind)).toEqual(['toolEnd', 'turnEnd']);
+    });
+
+    it('events for an unknown session never reach the roster', () => {
+      const calls = withSink();
+      handler.handleEvent('claude', { hook_event_name: 'Stop', session_id: 'nobody' });
+      expect(calls).toEqual([]);
+    });
+  });
 });

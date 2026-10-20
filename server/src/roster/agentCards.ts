@@ -2,6 +2,38 @@ import type { AgentStateStore } from '../agentStateStore.js';
 import type { AgentState, PersistedAgent } from '../types.js';
 import type { Assignment, CardAssigner } from './cardAssigner.js';
 
+/**
+ * One reason a card is held: a real agent, a Task-tool sub-agent, or a watched background
+ * sub-agent. Several holders can share one card key.
+ */
+export interface CardHolderInfo {
+  /** CardAssigner key (session id, or a derived key for sub-agents). */
+  key: string;
+  assignment: Assignment;
+  isLead: boolean;
+  /**
+   * How the webview addresses this holder. A top-level agent or teammate is `{ id }`; a Task-tool
+   * sub-agent (the "Subtask" character) is `{ id: parentAgentId, parentToolId }`, which the webview
+   * resolves to its own sub-character id.
+   */
+  identity: { id: number; parentToolId?: string };
+  /** Id in the MAIN store when the holder is a real agent there; absent for sub-agents. */
+  agentId?: number;
+  /** Id of the main-store agent whose project folder applies (the agent itself, or the parent). */
+  ownerId: number;
+}
+
+/** Roster bookkeeping hooks. Both run inside the store event that caused them; a throw is contained. */
+export interface AgentCardsListener {
+  /** A holder was added (or re-sighted) and its key has an assignment. */
+  assigned?(info: CardHolderInfo): void;
+  /**
+   * A holder is going away. `last` is true when no other holder shares its key, i.e. the card
+   * is about to be released: the key's assignment is still readable from the assigner here.
+   */
+  dropping?(info: CardHolderInfo, last: boolean): void;
+}
+
 export interface AgentCardsOptions {
   /** A CardAssigner, or a factory called on the first agent (so nothing opens roster.json early). */
   assigner: CardAssigner | (() => CardAssigner);
@@ -9,14 +41,21 @@ export interface AgentCardsOptions {
   subagentTools: ReadonlySet<string>;
   /** Persisted agents as the previous process left them; supplies cards for re-detected sessions. */
   loadPersisted: () => PersistedAgent[];
+  listener?: AgentCardsListener;
 }
 
 interface Holder {
-  /** CardAssigner key (session id, or a derived key for sub-agents). */
-  key: string;
+  info: Omit<CardHolderInfo, 'assignment'>;
   /** For tool holders: the parent agent that spawned the sub-agent. */
   parentId?: number;
   toolId?: string;
+}
+
+export interface AttachOptions {
+  /** Also follow sub-agent tool calls (agentToolStart/Done...) as holders. Main store only. */
+  watchTools?: boolean;
+  /** The store is SubagentWatch's shadow store: its agents are addressed by (lead, spawn tool). */
+  shadow?: boolean;
 }
 
 const agentHolder = (id: number) => `a:${id}`;
@@ -35,7 +74,8 @@ const toolKey = (sessionId: string, toolId: string) => `${sessionId}#tool-${tool
  *   that tool starts and released when it ends. A background spawn that is also watched or
  *   promoted to a real agent uses the same key, so it is still one card.
  *
- * Several holders may share a key; the card is released when the last one goes.
+ * Several holders may share a key; the card is released when the last one goes. An optional
+ * listener is told about every holder added and dropped (the roster uses it to keep stats).
  */
 export class AgentCards {
   private assigner: CardAssigner | undefined;
@@ -59,11 +99,11 @@ export class AgentCards {
     }
   }
 
-  /** Subscribe to a store's add/remove events. `watchTools` also follows sub-agent tool calls. */
-  attach(store: AgentStateStore, watchTools = false): void {
-    store.on('agentAdded', (id, agent) => this.onAgentAdded(id, agent));
+  /** Subscribe to a store's add/remove events. */
+  attach(store: AgentStateStore, opts: AttachOptions = {}): void {
+    store.on('agentAdded', (id, agent) => this.onAgentAdded(id, agent, opts.shadow === true));
     store.on('agentRemoved', (id) => this.onAgentRemoved(id));
-    if (watchTools) {
+    if (opts.watchTools) {
       store.on('broadcast', (msg) => this.onBroadcast(store, msg));
     }
   }
@@ -79,7 +119,7 @@ export class AgentCards {
 
   private lookup(holderId: string): Assignment | undefined {
     const holder = this.holders.get(holderId);
-    return holder ? this.assigner?.cardFor(holder.key) : undefined;
+    return holder ? this.assigner?.cardFor(holder.info.key) : undefined;
   }
 
   /** Resolve the assigner on first use. A failing factory disables the roster, never the agent. */
@@ -105,22 +145,44 @@ export class AgentCards {
   private draw(holderId: string, holder: Holder, isLead: boolean, previousCardId?: string) {
     const assigner = this.resolve();
     if (!assigner) return undefined;
-    const assignment = assigner.assign(holder.key, { isLead, previousCardId });
+    const assignment = assigner.assign(holder.info.key, { isLead, previousCardId });
     this.holders.set(holderId, holder);
+    this.notify(() => this.opts.listener?.assigned?.({ ...holder.info, assignment }));
     return assignment;
   }
 
-  private onAgentAdded(id: number, agent: AgentState): void {
+  /** The roster must never break agent handling: a failing listener is logged and skipped. */
+  private notify(call: () => void): void {
+    try {
+      call();
+    } catch (err) {
+      console.warn(`[Pixel Agents] Roster listener failed: ${String(err)}`);
+    }
+  }
+
+  private onAgentAdded(id: number, agent: AgentState, shadow: boolean): void {
     try {
       const isLead = agent.leadAgentId === undefined;
       let key: string;
       if (isLead) key = agent.sessionId;
       else if (agent.spawnToolUseId) key = toolKey(agent.sessionId, agent.spawnToolUseId);
       else key = `${agent.sessionId}#agent-${id}`;
+      // A shadow-store agent has no character: it IS the Subtask of (lead, spawn tool).
+      const identity =
+        shadow && agent.leadAgentId !== undefined && agent.spawnToolUseId
+          ? { id: agent.leadAgentId, parentToolId: agent.spawnToolUseId }
+          : { id };
       // A re-detected top-level session (its persisted agent was not restored, e.g. the
       // terminal is gone but the transcript is live) gets its old card back by session id.
       const previous = agent.cardId ?? (isLead ? this.previousCard(agent.sessionId) : undefined);
-      const assignment = this.draw(agentHolder(id), { key }, isLead, previous);
+      const info = {
+        key,
+        isLead,
+        identity,
+        agentId: shadow ? undefined : id,
+        ownerId: shadow ? (agent.leadAgentId ?? id) : id,
+      };
+      const assignment = this.draw(agentHolder(id), { info }, isLead, previous);
       if (assignment) agent.cardId = assignment.card?.id;
     } catch (err) {
       console.warn(`[Pixel Agents] Card assignment failed for agent ${id}: ${String(err)}`);
@@ -149,7 +211,16 @@ export class AgentCards {
           if (!parent) return;
           this.draw(
             toolHolder(parentId, toolId),
-            { key: toolKey(parent.sessionId, toolId), parentId, toolId },
+            {
+              info: {
+                key: toolKey(parent.sessionId, toolId),
+                isLead: false,
+                identity: { id: parentId, parentToolId: toolId },
+                ownerId: parentId,
+              },
+              parentId,
+              toolId,
+            },
             false,
           );
           return;
@@ -184,11 +255,17 @@ export class AgentCards {
     this.holders.delete(holderId);
     // Hooks + scanner (or a tool and its watched agent) can share a key: keep the card until
     // the last holder leaves.
+    let last = true;
     for (const other of this.holders.values()) {
-      if (other.key === holder.key) return;
+      if (other.info.key === holder.info.key) last = false;
     }
+    const assignment = this.assigner?.cardFor(holder.info.key);
+    if (assignment) {
+      this.notify(() => this.opts.listener?.dropping?.({ ...holder.info, assignment }, last));
+    }
+    if (!last) return;
     try {
-      this.assigner?.release(holder.key);
+      this.assigner?.release(holder.info.key);
     } catch (err) {
       console.warn(`[Pixel Agents] Card release failed: ${String(err)}`);
     }

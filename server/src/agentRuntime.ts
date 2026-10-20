@@ -40,13 +40,16 @@ import { assignPaletteIfNeeded } from './paletteAssigner.js';
 import { PathSet, pathsMatch } from './pathKey.js';
 import { AgentCards } from './roster/agentCards.js';
 import type { Assignment, CardAssigner } from './roster/cardAssigner.js';
+import type { PanelSelection, Roster } from './roster/index.js';
 import { SessionRouter } from './sessionRouter.js';
 import { SubagentWatch } from './subagentWatch.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from './timerManager.js';
 import {
+  releaseRosterSink,
   setBackgroundAgentCompletedCallback,
   setBackgroundAgentDetectedCallback,
   setHookProvider,
+  setRosterSink,
   setTeamSwitchCallback,
 } from './transcriptParser.js';
 import type { AgentState } from './types.js';
@@ -61,9 +64,15 @@ export interface RuntimeLifecycleCallbacks {
 
 export interface AgentRuntimeOptions {
   /**
-   * Roster card assignment. Pass a CardAssigner, or a factory that builds one on the first
-   * agent (so nothing opens roster.json until an agent exists). Omit it to run without a
-   * roster: agents then keep only their palette/hue sprite, as upstream does.
+   * The full roster: cards, stats (XP, time, tasks, tokens) and the agentRoster messages.
+   * Production passes createRoster(), which opens roster.json only when the first agent
+   * appears. The runtime disposes it. Takes precedence over cardAssigner.
+   */
+  roster?: Roster;
+  /**
+   * Card assignment alone, with no stats or messages: a CardAssigner, or a factory that
+   * builds one on the first agent. Mostly for tests of the card lifecycle. Omit both options
+   * to run without a roster: agents then keep only their palette/hue sprite, as upstream does.
    */
   cardAssigner?: CardAssigner | (() => CardAssigner);
 }
@@ -98,6 +107,7 @@ export class AgentRuntime {
 
   // Roster: a card is drawn when an agent joins a store and released when it leaves.
   private readonly cards: AgentCards | undefined;
+  private readonly roster: Roster | undefined;
   /** Set while dispose() tears agents down: shutdown must not rewrite the persisted agent list. */
   private disposing = false;
 
@@ -106,11 +116,15 @@ export class AgentRuntime {
     provider: HookProvider,
     options: AgentRuntimeOptions = {},
   ) {
-    if (options.cardAssigner) {
+    const roster = options.roster;
+    this.roster = roster;
+    const assigner = roster ? () => roster.getAssigner() : options.cardAssigner;
+    if (assigner) {
       this.cards = new AgentCards({
-        assigner: options.cardAssigner,
+        assigner,
         subagentTools: provider.subagentToolNames,
         loadPersisted: () => store.getAdapter()?.loadAgents() ?? [],
+        listener: roster?.cardsListener,
       });
     }
     // Wire module-level dependencies
@@ -124,8 +138,12 @@ export class AgentRuntime {
     }
     // Main store: agents, plus sub-agent tool calls (the webview shows each as a Subtask
     // character). Shadow store: watched background spawns, which share the tool call's card.
-    this.cards?.attach(store, true);
-    this.cards?.attach(this.subagentWatch.store);
+    this.cards?.attach(store, { watchTools: true });
+    this.cards?.attach(this.subagentWatch.store, { shadow: true });
+    // After the cards, so a sub-agent's tool-start finds its card holder already drawn.
+    roster?.attach(store);
+    // Module-level like the other transcriptParser seams; null clears a previous runtime's roster.
+    setRosterSink(roster ?? null);
     setAgentRemovalCallback((id) => this.removeAgent(id));
     setTeammateRemovalCallback((id) => this.removeTeammate(id, 'team-config'));
     // New-style teammates run their own sessions; registering routes their hook
@@ -180,6 +198,7 @@ export class AgentRuntime {
     );
 
     // Wire hook lifecycle callbacks to shared agent operations
+    this.hookEventHandler.setRoster(roster);
     this.hookEventHandler.setLifecycleCallbacks({
       onExternalSessionDetected: (sessionId, transcriptPath, cwd) => {
         const projectDir = transcriptPath ? path.dirname(transcriptPath) : cwd;
@@ -323,6 +342,21 @@ export class AgentRuntime {
   /** The card held by the sub-agent that `parentAgentId` started with tool call `toolId`. */
   getToolAssignment(parentAgentId: number, toolId: string): Assignment | undefined {
     return this.cards?.getToolAssignment(parentAgentId, toolId);
+  }
+
+  /** A client opened (or, with null, closed) the roster panel for an agent. */
+  setRosterPanelSelection(clientKey: unknown, selection: PanelSelection | null): void {
+    this.roster?.setPanelSelection(clientKey, selection);
+  }
+
+  /** A client went away: stop refreshing its panel. */
+  clearRosterPanelSelection(clientKey: unknown): void {
+    this.roster?.clearPanelSelection(clientKey);
+  }
+
+  /** Current agentRoster messages for every card holder, for a client that just connected. */
+  rosterMessages(): Array<Record<string, unknown>> {
+    return (this.roster?.snapshotMessages() ?? []) as unknown as Array<Record<string, unknown>>;
   }
 
   // ── Hook event routing ──
@@ -622,5 +656,8 @@ export class AgentRuntime {
     for (const id of [...this.store.keys()]) {
       this.removeAgent(id);
     }
+    // Each removal settled and flushed its card; this stops the timers and flushes the rest.
+    this.roster?.dispose();
+    if (this.roster) releaseRosterSink(this.roster);
   }
 }

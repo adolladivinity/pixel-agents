@@ -193,11 +193,11 @@ function normalizeHookEvent(
       return { sessionId, event: { kind: 'turnEnd' } };
 
     case 'UserPromptSubmit':
-      // No normalized kind for user prompts yet; silently ignore. No longer
-      // installed (it forwarded the prompt text here only to be dropped), but a
-      // stale install keeps POSTing it until its next install/uninstall runs,
-      // so the drop must stay graceful.
-      return null;
+      // Marks the start of a turn (the roster counts tasks with it) and nothing else:
+      // the prompt text is dropped here, never forwarded. NOT installed (see
+      // CLAUDE_HOOK_EVENTS), so it only arrives from a stale install that keeps POSTing it
+      // until its next install/uninstall runs; the transcript marks turn starts otherwise.
+      return { sessionId, event: { kind: 'promptSubmit' } };
 
     case 'SubagentStart': {
       const agentType = typeof raw.agent_type === 'string' ? raw.agent_type : 'unknown';
