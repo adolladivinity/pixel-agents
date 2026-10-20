@@ -24,7 +24,7 @@ Later roster tasks rely on this file instead of re-exploring the repo.
 IMPORTANT, protect the real home: server tests touch `~/.pixel-agents`. Upstream's tests set
 `process.env.HOME`, which Windows `os.homedir()` ignores, so before the fix in this branch
 (`server/__tests__/windowsHomeSetup.ts`, wired in `server/vitest.config.ts`) they wrote into the real
-`C:\Users\thoma\.pixel-agents\config.json`. The shim now mirrors HOME into USERPROFILE. As a second
+`%USERPROFILE%\.pixel-agents\config.json`. The shim now mirrors HOME into USERPROFILE. As a second
 guard, run server tests with a throwaway profile:
 
 ```bash
@@ -208,9 +208,9 @@ Resolution kept both sides (upstream's `directories`/terminal props and #393's T
 ## Sprites (Task 10)
 
 - Combined character list = 6 bundled (`char_0..5`), then the external asset dir's `char_N.png` in order, so cards 6-21 are the user's first 16 custom
-  sprites and cards 22-29 are 8 more. Those 8 are `CAST` entries 16-23 in `C:\Users\thoma\pixel-agents-assets\tools\build.py` (same recolour-a-bundled-sheet
+  sprites and cards 22-29 are 8 more. Those 8 are `CAST` entries 16-23 in `tools\build.py` in the external asset directory (same recolour-a-bundled-sheet
   builder; names there are "<card name>, <role>"). Order must match the seed's `spriteIndex`; never reorder or insert before the end.
-  The assets folder is not a git repo. Backup taken before the change: `C:\Users\thoma\pixel-agents-assets.bak-2026-10-20` (safe to delete once the new sprites look right).
+  The assets folder is not a git repo. Backup taken before the change: a dated `.bak` copy of the external asset directory next to it (safe to delete once the new sprites look right).
   Re-running `build.py` rewrites every `char_N.png` with fresh PNG metadata (pixels identical, bytes differ); the original 16 files were restored from the backup so they stay byte-identical.
   `cast_preview.png` is NOT written by `build.py` and still shows the first 16 only.
 - `webview-ui/src/office/sprites/cardSprite.ts` `spriteForCard(spriteIndex, loadedCount)` returns `{ sheet, hueShift }`: the card's own sheet when loaded, else
