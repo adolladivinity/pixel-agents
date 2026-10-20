@@ -94,6 +94,11 @@ export interface AgentState {
   palette?: number;
   /** Hue shift in degrees (0-360). Rotates the base palette colors. */
   hueShift?: number;
+
+  // -- Roster --
+  /** Id of the roster character card drawn for this agent (undefined = Temp or no roster).
+   *  Set by AgentRuntime when the agent joins the store; persisted so a reload re-attaches. */
+  cardId?: string;
 }
 
 export interface PersistedAgent {
@@ -128,4 +133,6 @@ export interface PersistedAgent {
   palette?: number;
   /** Hue shift in degrees (0-360). Persisted alongside palette. */
   hueShift?: number;
+  /** Roster card drawn for this agent; re-claimed on restore if still free. */
+  cardId?: string;
 }

@@ -38,6 +38,7 @@ import type { HookEvent } from './hookEventHandler.js';
 import { HookEventHandler } from './hookEventHandler.js';
 import { assignPaletteIfNeeded } from './paletteAssigner.js';
 import { PathSet, pathsMatch } from './pathKey.js';
+import type { Assignment, CardAssigner } from './roster/cardAssigner.js';
 import { SessionRouter } from './sessionRouter.js';
 import { SubagentWatch } from './subagentWatch.js';
 import { cancelPermissionTimer, cancelWaitingTimer } from './timerManager.js';
@@ -55,6 +56,15 @@ export interface RuntimeLifecycleCallbacks {
   onAgentRemoved?: (agentId: number, agent: AgentState) => void;
   /** Called when a teammate is removed. */
   onTeammateRemoved?: (teammateId: number, agent: AgentState, source: string) => void;
+}
+
+export interface AgentRuntimeOptions {
+  /**
+   * Roster card assignment. Pass a CardAssigner, or a factory that builds one on the first
+   * agent (so nothing opens roster.json until an agent exists). Omit it to run without a
+   * roster: agents then keep only their palette/hue sprite, as upstream does.
+   */
+  cardAssigner?: CardAssigner | (() => CardAssigner);
 }
 
 export class AgentRuntime {
@@ -85,10 +95,19 @@ export class AgentRuntime {
   private hookEventHandler: HookEventHandler;
   private lifecycleCallbacks: RuntimeLifecycleCallbacks = {};
 
+  // Roster: a card is drawn when an agent joins a store and released when it leaves.
+  private cardAssignerSource: CardAssigner | (() => CardAssigner) | undefined;
+  private cardAssigner: CardAssigner | undefined;
+  /** agent id -> the assigner key (session id) its card was drawn under. Main-store and
+   *  shadow-store ids never collide (shadow ids start at 1_000_000). */
+  private readonly cardKeys = new Map<number, string>();
+
   constructor(
     private readonly store: AgentStateStore,
     provider: HookProvider,
+    options: AgentRuntimeOptions = {},
   ) {
+    this.cardAssignerSource = options.cardAssigner;
     // Wire module-level dependencies
     setDismissalTracker(this.dismissalTracker);
     setHookProvider(provider);
@@ -98,6 +117,9 @@ export class AgentRuntime {
     if (provider.team) {
       setTeamProvider(provider.team);
     }
+    this.bindCardEvents(store);
+    // Unnamed background sub-agents live in the shadow store; each draws its own card too.
+    this.bindCardEvents(this.subagentWatch.store);
     setAgentRemovalCallback((id) => this.removeAgent(id));
     setTeammateRemovalCallback((id) => this.removeTeammate(id, 'team-config'));
     // New-style teammates run their own sessions; registering routes their hook
@@ -283,6 +305,64 @@ export class AgentRuntime {
   /** Register adapter-specific lifecycle callbacks. */
   setLifecycleCallbacks(callbacks: RuntimeLifecycleCallbacks): void {
     this.lifecycleCallbacks = callbacks;
+  }
+
+  // ── Roster cards ──
+
+  /** The card assignment for an agent (main or watched sub-agent id), if any. */
+  getAssignment(agentId: number): Assignment | undefined {
+    const key = this.cardKeys.get(agentId);
+    return key === undefined ? undefined : this.cardAssigner?.cardFor(key);
+  }
+
+  private bindCardEvents(source: AgentStateStore): void {
+    source.on('agentAdded', (id, agent) => this.assignCard(id, agent));
+    source.on('agentRemoved', (id) => this.releaseCard(id));
+  }
+
+  /** Resolve the assigner on first use. A failing factory disables the roster, never the agent. */
+  private resolveCardAssigner(): CardAssigner | undefined {
+    if (this.cardAssigner) return this.cardAssigner;
+    const source = this.cardAssignerSource;
+    if (!source) return undefined;
+    this.cardAssignerSource = undefined; // one attempt: a broken roster stays off
+    try {
+      this.cardAssigner = typeof source === 'function' ? source() : source;
+    } catch (err) {
+      console.warn(`[Pixel Agents] Roster disabled: ${String(err)}`);
+    }
+    return this.cardAssigner;
+  }
+
+  private assignCard(id: number, agent: AgentState): void {
+    try {
+      const assigner = this.resolveCardAssigner();
+      if (!assigner) return;
+      // Teammates and sub-agents can share their lead's session id, so only top-level
+      // sessions use the bare session id (which is what dedupes hooks vs the JSONL scanner).
+      const isLead = agent.leadAgentId === undefined;
+      const key = isLead ? agent.sessionId : `${agent.sessionId}#agent-${id}`;
+      const assignment = assigner.assign(key, { isLead, previousCardId: agent.cardId });
+      agent.cardId = assignment.card?.id;
+      this.cardKeys.set(id, key);
+    } catch (err) {
+      console.warn(`[Pixel Agents] Card assignment failed for agent ${id}: ${String(err)}`);
+    }
+  }
+
+  private releaseCard(id: number): void {
+    const key = this.cardKeys.get(id);
+    if (key === undefined) return;
+    this.cardKeys.delete(id);
+    // Two agents for one session (hooks + scanner) share a card: keep it until the last leaves.
+    for (const other of this.cardKeys.values()) {
+      if (other === key) return;
+    }
+    try {
+      this.cardAssigner?.release(key);
+    } catch (err) {
+      console.warn(`[Pixel Agents] Card release failed for agent ${id}: ${String(err)}`);
+    }
   }
 
   // ── Hook event routing ──
@@ -515,6 +595,7 @@ export class AgentRuntime {
         teamUsesTmux: p.teamUsesTmux,
         palette: p.palette,
         hueShift: p.hueShift,
+        cardId: p.cardId,
       });
 
       assignPaletteIfNeeded(agent, this.store);

@@ -57,6 +57,7 @@ import {
   hookProviderById,
   hookProviders,
 } from '../../server/src/providers/index.js';
+import { createDefaultCardAssigner } from '../../server/src/roster/defaultAssigner.js';
 import { PixelAgentsServer } from '../../server/src/server.js';
 import {
   getProjectDirPath,
@@ -196,7 +197,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     });
 
     // Create shared runtime (owns timer Maps, scanners, hook handler, dismissal tracker)
-    this.runtime = new AgentRuntime(this.store, claudeProvider);
+    this.runtime = new AgentRuntime(this.store, claudeProvider, {
+      cardAssigner: createDefaultCardAssigner,
+    });
 
     this.initServer();
   }
