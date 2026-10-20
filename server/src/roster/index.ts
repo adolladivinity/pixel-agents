@@ -206,10 +206,12 @@ export class Roster implements RosterSink {
     if (!core) return;
     for (const t of core.timers) clearInterval(t);
     const t = this.now();
-    for (const key of [...this.entries.keys()]) {
-      core.tracker.removed(key, t);
-      core.assigner.release(key);
-    }
+    const keys = [...this.entries.keys()];
+    for (const key of keys) core.tracker.removed(key, t);
+    // Flush while the claims are still held, then release them: a crash between the two leaves
+    // claims that go stale on their own, never stats that were lost.
+    core.store.flush();
+    for (const key of keys) core.assigner.release(key);
     this.entries.clear();
     this.byAgentId.clear();
     this.byTool.clear();

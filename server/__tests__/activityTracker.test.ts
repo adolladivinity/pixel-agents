@@ -253,6 +253,12 @@ describe('ActivityTracker tasks and tokens', () => {
     tracker.subagentEnded('s1', 20_000, 5_000);
     expect(store.get('card-a').tasksCompleted).toBe(0);
   });
+
+  it('a subagent with a NaN start or end earns nothing', () => {
+    tracker.subagentEnded('s1', Number.NaN, 60_000);
+    tracker.subagentEnded('s1', 0, Number.NaN);
+    expect(store.get('card-a').tasksCompleted).toBe(0);
+  });
 });
 
 describe('ActivityTracker temps and unknown sessions', () => {

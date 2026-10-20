@@ -121,7 +121,7 @@ export class ActivityTracker {
 
   /** A subagent's whole run is one task on its own card, if it lasted long enough. */
   subagentEnded(sessionId: string, startedAt: number, endedAt: number): void {
-    if (endedAt - startedAt < MIN_SUBAGENT_TASK_MS) return;
+    if (!(endedAt - startedAt >= MIN_SUBAGENT_TASK_MS)) return; // also rejects NaN
     this.write(sessionId, { tasksCompleted: 1 });
   }
 
