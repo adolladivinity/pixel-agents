@@ -191,7 +191,7 @@ Resolution kept both sides (upstream's `directories`/terminal props and #393's T
   top-right over the office, the roster panel is a column beside it).
 - Docking: desktop mounts it as the LAST flex sibling in `App.tsx` (after the `AgentCardBar` / `TerminalDrawer`), 300 px wide, full height,
   beside the canvas and never over it, so no character is covered. It has to come after the card bar, which overlays the office's right edge
-  with a negative margin. Mobile has no room beside the office, so it is a bottom sheet (`absolute bottom-0 inset-x-0`, max 65% height, with the
+  with a negative margin. Mobile has no room beside the office, so it is a bottom sheet (`absolute bottom-0 inset-x-0`, max 50% height, with the
   ✕) inside the office page; it opens on the first tap of the two-step canvas tap (the `onAgentSelectionChange` path) and the TaskBoard behaviour there is unchanged.
 - State: `useExtensionMessages` owns `rosterData` (latest `agentRoster` per `rosterKey(id, parentToolId)`, stored whatever the arrival order),
   `rosterTarget` and `selectRoster`. The target is its own state, NOT `selectedAgent`: a new agent auto-selects and #393 deselects on a bare-floor click,

@@ -99,7 +99,7 @@ export function RosterPanel({ data, appearance, variant, onClose }: RosterPanelP
   const frame =
     variant === 'dock'
       ? 'relative h-full shrink-0 w-[300px] border-l-2 overflow-y-auto'
-      : 'absolute bottom-0 inset-x-0 z-30 max-h-[65%] border-t-2 overflow-y-auto';
+      : 'absolute bottom-0 inset-x-0 z-30 max-h-[50%] border-t-2 overflow-y-auto';
 
   const body = (() => {
     if (data === null) {
@@ -207,12 +207,12 @@ export function RosterPanel({ data, appearance, variant, onClose }: RosterPanelP
         type="button"
         aria-label="Close roster panel"
         onClick={onClose}
-        className="absolute right-8 top-6 w-20 h-20 flex items-center justify-center bg-transparent border-0 text-roster-text-soft hover:text-white cursor-pointer text-base leading-none"
+        className="absolute right-2 top-2 w-40 h-40 flex items-center justify-center bg-transparent border-0 text-roster-text-soft hover:text-white cursor-pointer text-base leading-none"
       >
         <span aria-hidden="true">✕</span>
       </button>
 
-      <div className="flex items-center gap-10 pr-20">
+      <div className="flex items-center gap-10 pr-36">
         <div
           className="shrink-0 rounded-[6px] bg-roster-face-bg border-2 border-roster-gold overflow-hidden flex items-center justify-center"
           style={{ width: FACE_PX + 4, height: FACE_PX + 4 }}

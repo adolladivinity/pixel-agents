@@ -100,6 +100,11 @@ test.describe('Hooks ON / roster side panel', () => {
     await clickCharacter(panelFrame, agentId);
     await expectRosterPanelWithNameAndLevel(panelFrame);
 
+    // Touch-target guidance: the glyph is small but the hit area must not be.
+    const closeBox = await getRosterClose(panelFrame).boundingBox();
+    expect(closeBox!.width).toBeGreaterThanOrEqual(32);
+    expect(closeBox!.height).toBeGreaterThanOrEqual(32);
+
     narrator.step('pressing the close button');
     await getRosterClose(panelFrame).click();
     await expectRosterPanelClosed(panelFrame);
