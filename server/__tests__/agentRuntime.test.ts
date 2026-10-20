@@ -326,6 +326,186 @@ describe('AgentRuntime -- roster card assignment', () => {
     expect(assigner.cardFor('dup')).toBeUndefined();
   });
 
+  it('dispose leaves the persisted list intact, so a reload restores the same card', () => {
+    const ad = adapter();
+    const storeA = new AgentStateStore();
+    storeA.setAdapter(ad);
+    runtime = new AgentRuntime(storeA, claudeProvider, { cardAssigner: newAssigner('window-1') });
+    storeA.set(7, agentState(7, { sessionId: 'sess-reload' }));
+    storeA.persist();
+    const drawn = storeA.get(7)?.cardId;
+    expect(drawn).toBeTruthy();
+
+    runtime.dispose(); // what deactivate() does
+    runtime = undefined;
+
+    // Restore from exactly what dispose left behind, not from a snapshot taken before it.
+    const left = ad.loadAgents();
+    expect(left).toHaveLength(1);
+    expect(left[0].cardId).toBe(drawn);
+    const storeB = new AgentStateStore();
+    storeB.setAdapter(ad);
+    runtime = new AgentRuntime(storeB, claudeProvider, { cardAssigner: newAssigner('window-2') });
+    runtime.restoreExternalAgents();
+    expect(storeB.get(7)?.cardId).toBe(drawn);
+  });
+
+  it('dispose snapshots agents that were added but not yet persisted', () => {
+    const ad = adapter();
+    const store = new AgentStateStore();
+    store.setAdapter(ad);
+    runtime = new AgentRuntime(store, claudeProvider, { cardAssigner: newAssigner() });
+    store.set(4, agentState(4));
+    runtime.dispose();
+    runtime = undefined;
+    expect(ad.loadAgents().map((p) => p.id)).toEqual([4]);
+  });
+
+  it('a re-detected session (persisted agent not restored) gets its old card back by session id', () => {
+    const missing = path.join(tmpDir, 'gone.jsonl'); // transcript no longer exists: not restored
+    const oldCard = loadSeed()[4].id;
+    const ad = adapter([
+      {
+        id: 5,
+        sessionId: 'sess-live',
+        terminalName: '',
+        isExternal: true,
+        jsonlFile: missing,
+        projectDir: tmpDir,
+        cardId: oldCard,
+      },
+    ]);
+    const store = new AgentStateStore();
+    store.setAdapter(ad);
+    runtime = new AgentRuntime(store, claudeProvider, { cardAssigner: newAssigner() });
+    runtime.restoreExternalAgents();
+    expect(store.has(5)).toBe(false); // dropped cleanly: no ghost agent, no card held
+
+    // The scanner finds the live session under a new agent id.
+    store.set(9, agentState(9, { sessionId: 'sess-live' }));
+    expect(store.get(9)?.cardId).toBe(oldCard);
+  });
+
+  describe('foreground Task-tool sub-agents', () => {
+    function toolStart(store: AgentStateStore, parent: number, toolId: string, extra = {}) {
+      store.broadcast({
+        type: 'agentToolStart',
+        id: parent,
+        toolId,
+        status: 'Subtask: x',
+        toolName: 'Task',
+        ...extra,
+      });
+    }
+
+    function setup() {
+      const assigner = newAssigner();
+      const store = new AgentStateStore();
+      const rt = new AgentRuntime(store, claudeProvider, { cardAssigner: assigner });
+      runtime = rt;
+      store.set(1, agentState(1, { sessionId: 'lead' }));
+      return { assigner, store, rt };
+    }
+
+    it('draws a card for the sub-agent when the tool starts, not a lead', () => {
+      const { assigner, store, rt } = setup();
+      toolStart(store, 1, 'toolu_1');
+      const got = rt.getToolAssignment(1, 'toolu_1');
+      expect(got?.card).toBeTruthy();
+      expect(got?.isLead).toBe(false);
+      expect(got?.card?.id).not.toBe(store.get(1)?.cardId);
+      expect(assigner.cardFor('lead#tool-toolu_1')).toBe(got);
+    });
+
+    it('ignores non-subagent tools and named teammate spawns', () => {
+      const { store, rt } = setup();
+      toolStart(store, 1, 'toolu_r', { toolName: 'Read' });
+      toolStart(store, 1, 'toolu_t', { isTeammateSpawn: true });
+      expect(rt.getToolAssignment(1, 'toolu_r')).toBeUndefined();
+      expect(rt.getToolAssignment(1, 'toolu_t')).toBeUndefined();
+    });
+
+    it('is idempotent when the same tool start is re-broadcast', () => {
+      const { store, rt } = setup();
+      toolStart(store, 1, 'toolu_1');
+      const first = rt.getToolAssignment(1, 'toolu_1');
+      toolStart(store, 1, 'toolu_1', { runInBackground: true });
+      expect(rt.getToolAssignment(1, 'toolu_1')).toBe(first);
+    });
+
+    it('releases the card on agentToolDone', () => {
+      const { assigner, store, rt } = setup();
+      toolStart(store, 1, 'toolu_1');
+      store.broadcast({ type: 'agentToolDone', id: 1, toolId: 'toolu_1' });
+      expect(rt.getToolAssignment(1, 'toolu_1')).toBeUndefined();
+      expect(assigner.cardFor('lead#tool-toolu_1')).toBeUndefined();
+    });
+
+    it('releases the card on subagentClear (the actual end signal)', () => {
+      const { store, rt } = setup();
+      toolStart(store, 1, 'toolu_1');
+      store.broadcast({ type: 'subagentClear', id: 1, parentToolId: 'toolu_1' });
+      expect(rt.getToolAssignment(1, 'toolu_1')).toBeUndefined();
+    });
+
+    it('turn-end agentToolsClear releases foreground sub-agents but keeps background ones', () => {
+      const { store, rt } = setup();
+      toolStart(store, 1, 'toolu_fg');
+      toolStart(store, 1, 'toolu_bg');
+      store.get(1)!.backgroundAgentToolIds.add('toolu_bg');
+      store.broadcast({ type: 'agentToolsClear', id: 1 });
+      expect(rt.getToolAssignment(1, 'toolu_fg')).toBeUndefined();
+      expect(rt.getToolAssignment(1, 'toolu_bg')).toBeDefined();
+    });
+
+    it('releases every sub-agent card when the parent is removed', () => {
+      const { assigner, store, rt } = setup();
+      toolStart(store, 1, 'toolu_1');
+      toolStart(store, 1, 'toolu_2');
+      rt.removeAgent(1);
+      expect(rt.getToolAssignment(1, 'toolu_1')).toBeUndefined();
+      expect(assigner.cardFor('lead#tool-toolu_1')).toBeUndefined();
+      expect(assigner.cardFor('lead#tool-toolu_2')).toBeUndefined();
+      expect(assigner.cardFor('lead')).toBeUndefined();
+    });
+
+    it('releases sub-agent cards on dispose', () => {
+      const { assigner, store, rt } = setup();
+      toolStart(store, 1, 'toolu_1');
+      rt.dispose();
+      runtime = undefined;
+      expect(assigner.cardFor('lead#tool-toolu_1')).toBeUndefined();
+    });
+
+    it('parallel fan-out draws distinct cards', () => {
+      const { store, rt } = setup();
+      for (let i = 0; i < 5; i++) toolStart(store, 1, `toolu_${i}`);
+      const ids = new Set<string>([store.get(1)!.cardId!]);
+      for (let i = 0; i < 5; i++) ids.add(rt.getToolAssignment(1, `toolu_${i}`)!.card!.id);
+      expect(ids.size).toBe(6);
+    });
+
+    it('a background spawn that is also watched shares the tool call card', () => {
+      const { assigner, store, rt } = setup();
+      toolStart(store, 1, 'toolu_bg');
+      const fromTool = rt.getToolAssignment(1, 'toolu_bg');
+      const watched = agentState(1_000_000, {
+        sessionId: 'lead',
+        leadAgentId: 1,
+        spawnToolUseId: 'toolu_bg',
+      });
+      rt.subagentWatch.store.set(1_000_000, watched);
+      expect(watched.cardId).toBe(fromTool?.card?.id);
+      expect(rt.getAssignment(1_000_000)).toBe(fromTool);
+
+      // The card is held until both the tool call and the watched agent are gone.
+      store.broadcast({ type: 'subagentClear', id: 1, parentToolId: 'toolu_bg' });
+      expect(assigner.cardFor('lead#tool-toolu_bg')).toBe(fromTool);
+      rt.subagentWatch.store.delete(1_000_000);
+      expect(assigner.cardFor('lead#tool-toolu_bg')).toBeUndefined();
+    });
+  });
+
   it('releases every card on dispose', () => {
     const assigner = newAssigner();
     const store = new AgentStateStore();
