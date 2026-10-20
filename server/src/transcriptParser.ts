@@ -415,14 +415,14 @@ export function processTranscriptLine(
           }
         } else {
           // New user text prompt — new turn starting
-          rosterSink?.transcriptPrompt(agentId, agent);
+          rosterSink?.transcriptPrompt(agentId, agent, record);
           cancelWaitingTimer(agentId, waitingTimers);
           clearAgentActivity(agent, agentId, agents, permissionTimers);
           agent.hadToolsInTurn = false;
         }
       } else if (typeof content === 'string' && content.trim()) {
         // New user text prompt — new turn starting
-        rosterSink?.transcriptPrompt(agentId, agent);
+        rosterSink?.transcriptPrompt(agentId, agent, record);
         cancelWaitingTimer(agentId, waitingTimers);
         clearAgentActivity(agent, agentId, agents, permissionTimers);
         agent.hadToolsInTurn = false;

@@ -27,6 +27,20 @@ export function defaultRosterPath(): string {
 const TICK_MS = 1_000;
 const FLUSH_MS = 10_000;
 const HEARTBEAT_MS = 20_000;
+/**
+ * A real user prompt arriving this long after the open task started means the old turn was cut
+ * off (Esc fires no Stop hook), so the new prompt starts a fresh task. Shorter than this it is
+ * the transcript echo of a prompt a hook already started, or a very quick follow-up.
+ */
+const PROMPT_RESTART_AFTER_MS = 3_000;
+/** Markers of user lines the harness writes that the user never typed. */
+const NOT_A_PROMPT_MARKERS = [
+  '<command-name>',
+  '<command-message>',
+  '<local-command-stdout>',
+  '<local-command-stderr>',
+  '<local-command-caveat>',
+];
 
 export interface RosterOptions {
   /** Stats file. Defaults to ~/.pixel-agents/roster.json. Tests pass a temp path. */
@@ -116,6 +130,26 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 }
 
 /**
+ * Whether a transcript user record is something the user typed. Meta lines, compaction summaries
+ * and slash-command / local-command output are user records too but never start a turn. A
+ * missing record (older callers) counts as a prompt.
+ */
+export function isRealPrompt(record: unknown): boolean {
+  if (!isRecord(record)) return true;
+  if (record.isMeta === true || record.isCompactSummary === true) return false;
+  const message = isRecord(record.message) ? record.message : undefined;
+  const content = message?.content ?? record.content;
+  let text = '';
+  if (typeof content === 'string') text = content;
+  else if (Array.isArray(content)) {
+    for (const block of content) {
+      if (isRecord(block) && typeof block.text === 'string') text += block.text;
+    }
+  }
+  return !NOT_A_PROMPT_MARKERS.some((m) => text.includes(m));
+}
+
+/**
  * The running roster: shared stats store, card assigner, activity tracker and the three timers,
  * plus the `agentRoster` message sent to clients. Everything is created lazily on the first card
  * so a run with no agents never touches roster.json or starts a timer.
@@ -129,7 +163,9 @@ function isRecord(v: unknown): v is Record<string, unknown> {
  * hooks have been delivered for it, otherwise the transcript heuristic's own "waiting" status. A task
  * STARTS on a hook prompt event if one arrives (stale installs only: the current installer does not
  * subscribe to UserPromptSubmit) or on a user prompt in the transcript, whichever comes first; a start
- * while a task is open is ignored, so the two never double count.
+ * within PROMPT_RESTART_AFTER_MS of an open task is ignored, so the two never double count. A later
+ * prompt while a task is still open means the turn was interrupted: it restarts without counting.
+ * Meta, compaction and local-command user lines never start a task.
  */
 export class Roster implements RosterSink {
   readonly cardsListener: AgentCardsListener;
@@ -344,17 +380,23 @@ export class Roster implements RosterSink {
     });
   }
 
-  transcriptPrompt(agentId: number, agent: AgentState): void {
+  transcriptPrompt(agentId: number, agent: AgentState, record?: unknown): void {
     this.guard(() => {
       const key = this.keyFor(agentId, agent);
       const entry = key ? this.entries.get(key) : undefined;
       if (!key || !entry?.isLead || !this.core) return;
+      // Meta, compaction summaries and local-command lines (/clear, shell output) are not turns.
+      if (!isRealPrompt(record)) return;
       const { tracker } = this.core;
       const t = this.now();
       tracker.activity(key, t);
-      // A hook prompt event may have started this turn already; one task per turn.
       const snap = tracker.snapshot(key);
-      if (snap.taskStartedAt !== null && snap.taskEndedAt === null) return;
+      if (snap.taskStartedAt !== null && snap.taskEndedAt === null) {
+        // A hook prompt event may have started this turn a moment ago: one task per turn.
+        if (t - snap.taskStartedAt < PROMPT_RESTART_AFTER_MS) return;
+        // A new prompt well into an open task means the old turn was interrupted (Esc fires no
+        // Stop hook). Restart without counting it, like the tracker does for a missed Stop.
+      }
       tracker.taskStart(key, t);
     });
   }

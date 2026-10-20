@@ -19,8 +19,12 @@ export interface RosterSink {
     parentToolId: string,
     record: unknown,
   ): void;
-  /** The transcript shows a new user prompt (a turn is starting). */
-  transcriptPrompt(agentId: number, agent: AgentState): void;
+  /**
+   * The transcript shows a user line that is not a tool result (a turn may be starting). `record`
+   * is the raw JSONL record so the roster can tell a typed prompt from meta, compaction and
+   * local-command lines.
+   */
+  transcriptPrompt(agentId: number, agent: AgentState, record?: unknown): void;
   /** A hook event was delivered to the agent. */
   hookEvent(agentId: number, agent: AgentState, kind: AgentEvent['kind']): void;
 }

@@ -220,6 +220,87 @@ describe('roster wiring', () => {
     expect(view(1).stats.tasksCompleted).toBe(1);
   });
 
+  describe('interrupted turns and non-prompt user lines', () => {
+    const userLine = (content: unknown, extra: Record<string, unknown> = {}) => ({
+      type: 'user',
+      ...extra,
+      message: { role: 'user', content },
+    });
+    const toolResult = userLine([{ type: 'tool_result', tool_use_id: 'toolu_x', content: 'ok' }]);
+
+    it.each([
+      ['hooks off', false],
+      ['hooks on', true],
+    ])('a new prompt after an interrupted turn starts a fresh task (%s)', (_n, hooks) => {
+      addLead();
+      if (hooks) hook('PostToolUse');
+      line(1, userPrompt);
+      line(1, assistant('msg_a', { input_tokens: 10, output_tokens: 20 }));
+      expect(view(1).now.taskTokens).toBe(30);
+      clock += 20_000; // Esc: no Stop hook, no turn_duration
+      line(1, { ...userPrompt, message: { role: 'user', content: 'second prompt' } });
+      const msg = view(1);
+      expect(msg.now.taskStartedAt).toBe(T0 + 20_000);
+      expect(msg.now.taskTokens).toBe(0);
+      expect(msg.stats.tasksCompleted).toBe(0); // the interrupted turn is not counted
+      expect(msg.stats.lifetimeTokens).toBe(30); // lifetime tokens never go back
+      clock += 5_000;
+      if (hooks) hook('Stop');
+      else line(1, turnDuration);
+      expect(view(1).stats.tasksCompleted).toBe(1);
+    });
+
+    it('a prompt within 3 s of the open task is the same turn', () => {
+      addLead();
+      line(1, userPrompt);
+      clock += 2_999;
+      line(1, userPrompt);
+      expect(view(1).now.taskStartedAt).toBe(T0);
+    });
+
+    it('a mid-turn tool_result line does not restart the task', () => {
+      addLead();
+      line(1, userPrompt);
+      clock += 30_000;
+      line(1, toolResult);
+      expect(view(1).now.taskStartedAt).toBe(T0);
+      expect(view(1).stats.tasksCompleted).toBe(0);
+    });
+
+    const notPrompts: Array<[string, unknown]> = [
+      ['isMeta', userLine('placeholder meta text', { isMeta: true })],
+      ['isCompactSummary', userLine('placeholder summary', { isCompactSummary: true })],
+      ['command name', userLine('<command-name>/placeholder</command-name>')],
+      ['command stdout', userLine('<local-command-stdout>placeholder</local-command-stdout>')],
+      ['command stderr', userLine('<local-command-stderr>placeholder</local-command-stderr>')],
+      [
+        'command in a text block',
+        userLine([{ type: 'text', text: '<command-name>/placeholder</command-name>' }]),
+      ],
+    ];
+
+    it.each(notPrompts)('%s after Stop does not open a task', (_n, rec) => {
+      addLead();
+      hook('PostToolUse');
+      line(1, userPrompt);
+      clock += 5_000;
+      hook('Stop');
+      clock += 5_000;
+      line(1, rec);
+      const msg = view(1);
+      expect(msg.now.taskEndedAt).toBe(T0 + 5_000);
+      expect(msg.stats.tasksCompleted).toBe(1);
+    });
+
+    it.each(notPrompts)('%s mid-turn does not restart the task', (_n, rec) => {
+      addLead();
+      line(1, userPrompt);
+      clock += 30_000;
+      line(1, rec);
+      expect(view(1).now.taskStartedAt).toBe(T0);
+    });
+  });
+
   it('assistant JSONL lines add tokens to the lead card, counting each message id once', () => {
     addLead();
     line(1, userPrompt);
