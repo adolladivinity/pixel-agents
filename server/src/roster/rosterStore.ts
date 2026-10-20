@@ -9,6 +9,9 @@ const CLAIM_STALE_MS = 60_000;
 const LOCK_STALE_MS = 10_000;
 const LOCK_TIMEOUT_MS = 2_000;
 const LOCK_RETRY_MS = 50;
+/** Reads that fail for a reason other than "missing" (antivirus, handle limits) are retried. */
+const READ_ATTEMPTS = 3;
+const READ_RETRY_MS = 20;
 /** Largest value a stat may hold. Anything outside [0, MAX_STAT] marks the file corrupt. */
 const MAX_STAT = 1e12;
 
@@ -26,7 +29,11 @@ interface RosterFile {
   inUse: Record<string, InUseEntry>;
 }
 
-type ReadResult = { kind: 'ok'; data: RosterFile } | { kind: 'missing' } | { kind: 'corrupt' };
+type ReadResult =
+  | { kind: 'ok'; data: RosterFile }
+  | { kind: 'missing' }
+  | { kind: 'corrupt' }
+  | { kind: 'unreadable' };
 
 export interface RosterStoreOptions {
   filePath: string;
@@ -248,7 +255,7 @@ export class RosterStore {
     }
     try {
       const result = this.readFile();
-      if (result.kind === 'corrupt') return false;
+      if (result.kind === 'corrupt' || result.kind === 'unreadable') return false;
       const data: RosterFile =
         result.kind === 'ok' ? result.data : { version: 1, cards: {}, inUse: {} };
       this.pruneStale(data);
@@ -292,8 +299,10 @@ export class RosterStore {
           fs.rmSync(lock, { force: true });
           continue;
         }
-      } catch {
-        continue; // lock vanished between open and stat: try again straight away
+      } catch (err) {
+        // Lock vanished between open and stat: retry straight away. Any other failure (stat or
+        // remove keeps throwing) must still honour the deadline and sleep, or this loop would spin.
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') continue;
       }
       if (Date.now() >= deadline) return false;
       sleepSync(LOCK_RETRY_MS);
@@ -308,15 +317,26 @@ export class RosterStore {
     }
   }
 
-  /** Read and validate the file. A corrupt file is backed up and flips the store to read-only. */
+  /**
+   * Read and validate the file. A file that parses badly is backed up and flips the store to
+   * read-only. A file that cannot be read at all (EBUSY, EPERM, EMFILE, ...) is only "unreadable":
+   * retried a few times, then reported without a backup or read-only, so the next call tries again.
+   */
   private readFile(): ReadResult {
-    let text: string;
-    try {
-      text = fs.readFileSync(this.filePath, 'utf8');
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { kind: 'missing' };
-      this.markCorrupt(`cannot read it: ${String(err)}`);
-      return { kind: 'corrupt' };
+    let text: string | undefined;
+    for (let attempt = 1; text === undefined; attempt++) {
+      try {
+        text = fs.readFileSync(this.filePath, 'utf8');
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { kind: 'missing' };
+        if (attempt >= READ_ATTEMPTS) {
+          this.log(
+            `[roster] cannot read ${this.filePath} right now, will retry later: ${String(err)}`,
+          );
+          return { kind: 'unreadable' };
+        }
+        sleepSync(READ_RETRY_MS);
+      }
     }
     const data = this.parse(text);
     if (!data) {

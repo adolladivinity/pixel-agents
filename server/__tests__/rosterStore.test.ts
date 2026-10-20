@@ -1,7 +1,9 @@
 import * as fs from 'fs';
+import fsDefault from 'fs';
+import { syncBuiltinESMExports } from 'module';
 import * as os from 'os';
 import * as path from 'path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { RosterStore } from '../src/roster/rosterStore.js';
 
@@ -213,6 +215,68 @@ describe('RosterStore locking', () => {
     fs.rmSync(lock);
     a.flush();
     expect(store('B').get('x').xp).toBe(2);
+  });
+});
+
+describe('RosterStore lock and read failures', () => {
+  it('an unremovable stale lock (a directory) times out instead of spinning', () => {
+    const lock = file + '.lock';
+    fs.mkdirSync(lock);
+    const old = new Date(Date.now() - 60_000);
+    fs.utimesSync(lock, old, old);
+    const a = store('A', undefined, { lockTimeoutMs: 200 });
+    a.addDelta('x', { xp: 2 });
+    const started = Date.now();
+    a.flush();
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(warnings.some((w) => w.includes('could not lock'))).toBe(true);
+    expect(fs.existsSync(file)).toBe(false);
+    expect(a.get('x').xp).toBe(2);
+    fs.rmSync(lock, { recursive: true });
+    a.flush();
+    expect(store('B').get('x').xp).toBe(2);
+  });
+
+  it('a transient read error is retried and does not corrupt or lock the store', () => {
+    const seed = store('S');
+    seed.addDelta('x', { xp: 3 });
+    seed.flush();
+    const real = fs.readFileSync;
+    let failures = 1;
+    const spy = vi.spyOn(fsDefault, 'readFileSync').mockImplementation(((...args: unknown[]) => {
+      if (failures-- > 0) throw Object.assign(new Error('busy'), { code: 'EBUSY' });
+      return (real as (...a: unknown[]) => unknown)(...args);
+    }) as typeof fs.readFileSync);
+    syncBuiltinESMExports();
+    try {
+      const a = store('A');
+      expect(failures).toBeLessThan(0); // first read threw, a retry succeeded
+      expect(a.readOnly).toBe(false);
+      expect(a.get('x').xp).toBe(3);
+    } finally {
+      spy.mockRestore();
+      syncBuiltinESMExports();
+    }
+    expect(corruptCopies()).toHaveLength(0);
+  });
+
+  it('a persistently unreadable file is not corrupt: no backup, not read-only, retried later', () => {
+    fs.mkdirSync(file); // reading a directory fails with EISDIR, a non-ENOENT error
+    const a = store('A');
+    expect(a.readOnly).toBe(false);
+    a.addDelta('x', { xp: 4 });
+    expect(() => a.flush()).not.toThrow();
+    expect(a.tryClaim('x', 's1')).toBe(false);
+    expect(a.claimedByOthers().size).toBe(0);
+    expect(a.readOnly).toBe(false);
+    expect(a.get('x').xp).toBe(4);
+    expect(warnings.length).toBeGreaterThan(0);
+    expect(corruptCopies()).toHaveLength(0);
+    expect(fs.existsSync(file + '.lock')).toBe(false);
+    fs.rmdirSync(file);
+    a.flush();
+    expect(store('B').get('x').xp).toBe(4);
+    expect(a.tryClaim('x', 's1')).toBe(true);
   });
 });
 
