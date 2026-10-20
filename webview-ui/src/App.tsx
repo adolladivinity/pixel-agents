@@ -560,8 +560,10 @@ function App() {
   // beside the office (after the card bar / terminal drawer, so the bar's
   // overlay of the office's right edge never lands on it); mobile has no room
   // beside the office, so it is a bottom sheet inside the office page.
+  // Hidden in layout edit mode (the editor owns the right side there, as with the task board);
+  // rosterTarget is kept, so the same panel is back after leaving edit mode if still valid.
   const rosterPanel =
-    rosterTarget && !isDebugMode ? (
+    rosterTarget && !isDebugMode && !editor.isEditMode ? (
       <RosterPanel
         data={rosterData[rosterKey(rosterTarget.agentId, rosterTarget.parentToolId)] ?? null}
         appearance={(() => {

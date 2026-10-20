@@ -100,7 +100,7 @@ export function RosterPanel({ data, appearance, variant, onClose }: RosterPanelP
 
   const frame =
     variant === 'dock'
-      ? 'relative h-full shrink-0 w-[300px] border-l-2 overflow-y-auto'
+      ? 'relative h-full shrink-0 w-[min(300px,45%)] border-l-2 overflow-y-auto'
       : 'absolute bottom-0 inset-x-0 z-30 max-h-[50%] border-t-2 overflow-y-auto';
 
   const body = (() => {

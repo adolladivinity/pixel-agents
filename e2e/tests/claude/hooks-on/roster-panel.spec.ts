@@ -22,6 +22,7 @@ import {
   getRosterName,
   getRosterPanel,
 } from '../../../helpers/roster';
+import { enterEditMode, exitEditMode } from '../../../helpers/editor';
 import { getPixelAgentsFrame, openPixelAgentsPanel } from '../../../helpers/webview';
 
 const HOLD_OPEN_MS = 120_000;
@@ -172,5 +173,40 @@ test.describe('Hooks ON / roster side panel', () => {
     const survivorName = await expectRosterPanelWithNameAndLevel(panelFrame);
     expect(survivorName).not.toBe(doomedName);
     narrator.check(`panel shows ${survivorName}, not ${doomedName}`);
+  });
+
+  test('the dock never takes more than 45% of the width, and hides in the layout editor @area:roster', async ({
+    pixelAgents,
+  }) => {
+    const { frame, window, tmpHome, mockLogFile, narrator } = pixelAgents;
+
+    await waitForClaudeHookSetup(tmpHome);
+    await arrangeNextClaudeInvocation(
+      tmpHome,
+      claudeScenario('roster panel narrow and editor').holdOpenFor(HOLD_OPEN_MS).build(),
+    );
+    await spawnInternalAgentAndWait(frame, tmpHome, mockLogFile);
+    await openPixelAgentsPanel(window);
+    const panelFrame = await getPixelAgentsFrame(window);
+    const agentId = await expectSingleAgentOverlay(panelFrame);
+
+    await clickCharacter(panelFrame, agentId);
+    const name = await expectRosterPanelWithNameAndLevel(panelFrame);
+
+    narrator.step('checking the dock leaves room for the office');
+    const panelBox = await getRosterPanel(panelFrame).boundingBox();
+    const viewportWidth = await panelFrame.evaluate(() => window.innerWidth);
+    expect(panelBox!.width).toBeLessThanOrEqual(300.5);
+    expect(panelBox!.width).toBeLessThanOrEqual(viewportWidth * 0.45 + 1);
+
+    narrator.step('entering the layout editor');
+    await enterEditMode(panelFrame);
+    await expectRosterPanelClosed(panelFrame);
+
+    narrator.step('leaving the layout editor');
+    await exitEditMode(panelFrame);
+    await expect(getRosterPanel(panelFrame)).toBeVisible({ timeout: 20_000 });
+    await expect(getRosterName(panelFrame)).toHaveText(name);
+    narrator.check('dock stays within 45%, hides in edit mode, returns with the same agent');
   });
 });
