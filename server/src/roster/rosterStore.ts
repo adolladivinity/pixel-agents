@@ -30,7 +30,7 @@ interface RosterFile {
 }
 
 type ReadResult =
-  | { kind: 'ok'; data: RosterFile }
+  | { kind: 'ok'; data: RosterFile; restored?: boolean }
   | { kind: 'missing' }
   | { kind: 'corrupt' }
   | { kind: 'unreadable' };
@@ -77,6 +77,12 @@ function emptyStats(): CardStats {
  * validation is copied to `roster.json.corrupt-<timestamp>` and the store goes read-only for the
  * session: it never writes the file, the lock or the temp file, and keeps deltas and claims in memory.
  *
+ * Durability: the temp file is fsynced before the rename, and the last good file is rotated to
+ * `roster.json.bak` before it is replaced, so a crash at any point leaves at least one valid file.
+ * If `roster.json` is missing, empty or corrupt but `.bak` is valid, the corrupt file is copied
+ * aside, the store loads `.bak` and the next write puts it back; the store stays writable. Only
+ * when both are unusable does it go read-only as above.
+ *
  * Lock staleness uses the lock file's mtime against real time (Date.now), because mtime is real
  * time too; claim staleness and firstSeen/lastSeen use the injectable `now`.
  */
@@ -87,6 +93,8 @@ export class RosterStore {
   private readonly log: (msg: string) => void;
   private readonly lockTimeoutMs: number;
   private isReadOnly = false;
+  /** The corrupt roster.json has been copied aside already (once per process is enough). */
+  private corruptCopied = false;
   /** Last persisted view, refreshed on every read. */
   private cards: Record<string, CardStats> = {};
   /** Unflushed amounts to add on top of `cards`. */
@@ -258,11 +266,13 @@ export class RosterStore {
       if (result.kind === 'corrupt' || result.kind === 'unreadable') return false;
       const data: RosterFile =
         result.kind === 'ok' ? result.data : { version: 1, cards: {}, inUse: {} };
+      const restored = result.kind === 'ok' && result.restored === true;
       this.pruneStale(data);
-      if (!mutate(data)) return false;
-      const tmp = this.filePath + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
-      fs.renameSync(tmp, this.filePath);
+      // A restore must reach the disk even when the caller has nothing to change.
+      if (!mutate(data) && !restored) return false;
+      // Rotate only a roster.json that was just read as valid: never copy a bad file over the .bak.
+      if (result.kind === 'ok' && !restored) this.rotateBackup();
+      this.writeDurably(this.filePath, JSON.stringify(data, null, 2));
       this.cards = data.cards;
       return true;
     } catch (err) {
@@ -271,6 +281,33 @@ export class RosterStore {
     } finally {
       this.releaseLock();
     }
+  }
+
+  /** Write to a temp file, fsync it, then rename: a power cut leaves the old file or the new one. */
+  private writeDurably(target: string, text: string): void {
+    const tmp = target + '.tmp';
+    const fd = fs.openSync(tmp, 'w');
+    try {
+      fs.writeSync(fd, text);
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    fs.renameSync(tmp, target);
+  }
+
+  /** Keep the current (valid) roster.json as roster.json.bak. A failure is logged, never fatal. */
+  private rotateBackup(): void {
+    const bak = this.backupPath();
+    try {
+      this.writeDurably(bak, fs.readFileSync(this.filePath, 'utf8'));
+    } catch (err) {
+      this.log(`[roster] could not refresh ${bak}: ${String(err)}`);
+    }
+  }
+
+  private backupPath(): string {
+    return this.filePath + '.bak';
   }
 
   private pruneStale(data: RosterFile): void {
@@ -328,7 +365,7 @@ export class RosterStore {
       try {
         text = fs.readFileSync(this.filePath, 'utf8');
       } catch (err) {
-        if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { kind: 'missing' };
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') return this.fromBackup('missing');
         if (attempt >= READ_ATTEMPTS) {
           this.log(
             `[roster] cannot read ${this.filePath} right now, will retry later: ${String(err)}`,
@@ -339,11 +376,38 @@ export class RosterStore {
       }
     }
     const data = this.parse(text);
-    if (!data) {
-      this.markCorrupt('it is not a valid roster file');
-      return { kind: 'corrupt' };
-    }
+    if (!data) return this.fromBackup('corrupt');
     return { kind: 'ok', data };
+  }
+
+  /**
+   * roster.json is missing or unparsable: use roster.json.bak if it is valid (copying a corrupt
+   * roster.json aside first), otherwise report missing / go read-only as before.
+   */
+  private fromBackup(problem: 'missing' | 'corrupt'): ReadResult {
+    let bakText: string | undefined;
+    try {
+      bakText = fs.readFileSync(this.backupPath(), 'utf8');
+    } catch {
+      // No (readable) backup.
+    }
+    const bak = bakText === undefined ? null : this.parse(bakText);
+    if (bak) {
+      if (problem === 'corrupt') this.copyCorruptAside(this.filePath);
+      this.log(
+        `[roster] ${this.filePath} was ${problem === 'missing' ? 'missing' : 'unusable'}; ` +
+          `restored your stats from ${this.backupPath()}.`,
+      );
+      return { kind: 'ok', data: bak, restored: true };
+    }
+    if (problem === 'missing' && bakText === undefined) return { kind: 'missing' };
+    // Corrupt roster.json, or a missing one next to a backup that is unusable too: starting empty
+    // could overwrite real progress, so go read-only on whichever file exists.
+    this.markCorrupt(
+      problem === 'corrupt' ? this.filePath : this.backupPath(),
+      'it is not a valid roster file',
+    );
+    return { kind: 'corrupt' };
   }
 
   private parse(text: string): RosterFile | null {
@@ -380,22 +444,36 @@ export class RosterStore {
     return { version: 1, cards, inUse };
   }
 
-  private markCorrupt(reason: string): void {
+  private markCorrupt(file: string, reason: string): void {
     this.isReadOnly = true;
-    let backup = `${this.filePath}.corrupt-${Date.now()}`;
-    try {
-      for (let i = 1; fs.existsSync(backup); i++)
-        backup = `${this.filePath}.corrupt-${Date.now()}-${i}`;
-      fs.copyFileSync(this.filePath, backup);
+    const backup = this.copyCorruptAside(file);
+    if (backup) {
       this.log(
-        `[roster] ${this.filePath} is unusable (${reason}). Copied it to ${backup}. ` +
+        `[roster] ${file} is unusable (${reason}). Copied it to ${backup}. ` +
           'Roster stats are read-only this session and nothing will be written to it.',
       );
-    } catch (err) {
+    } else {
       this.log(
-        `[roster] ${this.filePath} is unusable (${reason}) and the backup failed (${String(err)}). ` +
+        `[roster] ${file} is unusable (${reason}) and the backup failed. ` +
           'Roster stats are read-only this session.',
       );
+    }
+  }
+
+  /** Copy a bad file to `<file>.corrupt-<timestamp>`; returns the copy's path, or null on failure. */
+  private copyCorruptAside(file: string): string | null {
+    if (file === this.filePath) {
+      if (this.corruptCopied) return null;
+      this.corruptCopied = true;
+    }
+    let backup = `${file}.corrupt-${Date.now()}`;
+    try {
+      for (let i = 1; fs.existsSync(backup); i++) backup = `${file}.corrupt-${Date.now()}-${i}`;
+      fs.copyFileSync(file, backup);
+      return backup;
+    } catch (err) {
+      this.log(`[roster] could not copy ${file} aside: ${String(err)}`);
+      return null;
     }
   }
 }
