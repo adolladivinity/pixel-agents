@@ -454,7 +454,10 @@ describe('dist/cli.js entry-point guard', () => {
         string,
         unknown
       >;
-      expect(JSON.stringify(settings)).toContain(installedHook);
+      // JSON.stringify escapes backslashes in Windows paths, so compare against the
+      // JSON-escaped form of the path (identical to the raw path on POSIX).
+      const escapedHook = JSON.stringify(installedHook).slice(1, -1);
+      expect(JSON.stringify(settings)).toContain(escapedHook);
     } finally {
       await stopChild(child);
       fs.rmSync(tmpHome, { recursive: true, force: true });
