@@ -11,7 +11,9 @@ let tmpHome: string;
 let workspaceDir: string;
 
 function makeNodeCommand(scriptPath: string): string {
-  return `${JSON.stringify(process.execPath)} ${JSON.stringify(scriptPath)}`;
+  // Plain quotes, not JSON.stringify: its doubled backslashes make a Windows
+  // path stop matching the runner's slash-normalized hook-path check.
+  return `"${process.execPath}" "${scriptPath}"`;
 }
 
 function writeHookScript(scriptPath: string, outputPath: string): void {
@@ -54,6 +56,7 @@ function runMockClaude(
       env: {
         ...process.env,
         HOME: tmpHome,
+        USERPROFILE: tmpHome, // Windows os.homedir() reads this, not HOME
       },
       stdio: ['ignore', 'ignore', 'pipe'],
     });
