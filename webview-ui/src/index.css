@@ -42,6 +42,21 @@
   --color-status-success: #89d185;
   --color-status-error: var(--color-danger);
 
+  /* Roster panel (mockup: docs/superpowers/specs/2026-10-18-pixel-agents-roster-panel-mockup.html) */
+  --color-roster-bg: #1d1a24;
+  --color-roster-border: #5a4a70;
+  --color-roster-box: #2a2534;
+  --color-roster-face-bg: #2c2738;
+  --color-roster-track: #3a3348;
+  --color-roster-gold: #ffd34d;
+  --color-roster-mint: #6ee7b7;
+  --color-roster-mint-deep: #34d399;
+  --color-roster-lavender: #c9b8e6;
+  --color-roster-text: #eeeaf5;
+  --color-roster-text-soft: #d6cfe4;
+  --color-roster-muted: #a89fba;
+  --color-roster-idle: #9c94ad;
+
   /* Shadow */
   --shadow-pixel: 2px 2px 0px #0a0a14;
 
@@ -88,6 +103,19 @@
   --color-status-active: var(--color-status-active);
   --color-status-success: var(--color-status-success);
   --color-status-error: var(--color-status-error);
+  --color-roster-bg: var(--color-roster-bg);
+  --color-roster-border: var(--color-roster-border);
+  --color-roster-box: var(--color-roster-box);
+  --color-roster-face-bg: var(--color-roster-face-bg);
+  --color-roster-track: var(--color-roster-track);
+  --color-roster-gold: var(--color-roster-gold);
+  --color-roster-mint: var(--color-roster-mint);
+  --color-roster-mint-deep: var(--color-roster-mint-deep);
+  --color-roster-lavender: var(--color-roster-lavender);
+  --color-roster-text: var(--color-roster-text);
+  --color-roster-text-soft: var(--color-roster-text-soft);
+  --color-roster-muted: var(--color-roster-muted);
+  --color-roster-idle: var(--color-roster-idle);
 
   /* Shadow */
   --shadow-pixel: var(--shadow-pixel);

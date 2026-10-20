@@ -10,6 +10,8 @@ import { DirectoryModal } from './components/DirectoryModal.js';
 import { EditActionBar } from './components/EditActionBar.js';
 import { IntroBubble } from './components/IntroBubble.js';
 import { MigrationNotice } from './components/MigrationNotice.js';
+import { rosterKey } from './components/rosterFormat.js';
+import { RosterPanel } from './components/RosterPanel.js';
 import { SettingsModal } from './components/SettingsModal.js';
 import { TaskBoard } from './components/TaskBoard.js';
 import { TerminalDrawer } from './components/TerminalDrawer.js';
@@ -18,7 +20,11 @@ import { Button } from './components/ui/Button.js';
 import { Modal } from './components/ui/Modal.js';
 import { VersionIndicator } from './components/VersionIndicator.js';
 import { ZoomControls } from './components/ZoomControls.js';
-import { OFFICE_CANVAS_TEST_ID } from './constants.js';
+import {
+  CHARACTER_HIT_HEIGHT,
+  CHARACTER_SITTING_OFFSET_PX,
+  OFFICE_CANVAS_TEST_ID,
+} from './constants.js';
 import { useDirectoryEditor } from './hooks/useDirectoryEditor.js';
 import { useEditorActions } from './hooks/useEditorActions.js';
 import { useEditorKeyboard } from './hooks/useEditorKeyboard.js';
@@ -40,7 +46,7 @@ import { isRotatable } from './office/layout/furnitureCatalog.js';
 import { migrateLayoutColors } from './office/layout/layoutSerializer.js';
 import { overlayProjection } from './office/projection.js';
 import { getPetCount } from './office/sprites/petSpriteData.js';
-import { EditTool, type OfficeLayout, TILE_SIZE } from './office/types.js';
+import { CharacterState, EditTool, type OfficeLayout, TILE_SIZE } from './office/types.js';
 import { isBrowserRuntime, isE2E } from './runtime.js';
 import { installTestHooks } from './testHooks.js';
 import { transport } from './transport/index.js';
@@ -91,6 +97,9 @@ function App() {
     subagentTools,
     subagentCharacters,
     agentTasks,
+    rosterData,
+    rosterTarget,
+    selectRoster,
     layoutReady,
     layoutWasReset,
     loadedAssets,
@@ -336,6 +345,25 @@ function App() {
       };
     };
     hooks.getShowAreas = () => effectiveShowAreas;
+    // Where a character is on screen, in CSS px relative to the canvas (the
+    // body's centre, where a click lands). Lets a spec drive the REAL click.
+    hooks.getCharacterCenter = (id) => {
+      const canvas = document.querySelector(`[data-testid="${OFFICE_CANVAS_TEST_ID}"]`);
+      const ch = getOfficeState().characters.get(id);
+      if (!canvas || !ch) return null;
+      const projection = overlayProjection(
+        getOfficeState().getLayout(),
+        canvas.getBoundingClientRect(),
+        editor.zoom,
+        editor.panRef.current,
+        window.devicePixelRatio || 1,
+      );
+      const sitting = ch.state === CharacterState.TYPE ? CHARACTER_SITTING_OFFSET_PX : 0;
+      return {
+        x: projection.toScreenX(ch.x),
+        y: projection.toScreenY(ch.y + sitting - CHARACTER_HIT_HEIGHT / 2),
+      };
+    };
     // Lets the module-load `selectAgent` hook update React selection as well as
     // the office's, so it behaves like a canvas click rather than half of one.
     hooks.selectionSync = setSelectedAgent;
@@ -368,12 +396,41 @@ function App() {
     transport.send({ type: 'closeAgent', id });
   }, []);
 
+  // Open (or switch) the roster panel for a clicked character. A Task-tool
+  // sub-character has a negative webview id the server knows nothing about, so
+  // it is addressed as its parent plus the tool id. A bare-floor click never
+  // reaches here: the panel stays until its ✕ or until another character.
+  const openRosterFor = useCallback(
+    (characterId: number) => {
+      const meta = getOfficeState().subagentMeta.get(characterId);
+      selectRoster(
+        meta
+          ? { agentId: meta.parentAgentId, parentToolId: meta.parentToolId }
+          : { agentId: characterId },
+      );
+    },
+    [selectRoster],
+  );
+
+  // Canvas selection changes. Mobile's first tap only selects (a second tap
+  // opens the terminal), so the roster panel opens on that first tap there.
+  const handleCanvasSelection = useCallback(
+    (id: number | null) => {
+      setSelectedAgent(id);
+      if (isMobile && id !== null) openRosterFor(id);
+    },
+    [setSelectedAgent, isMobile, openRosterFor],
+  );
+
+  const handleCloseRoster = useCallback(() => selectRoster(null), [selectRoster]);
+
   const { reveal: revealTerminal } = terminalDrawer;
   const { showTerminal: showMobileTerminal } = mobileShell;
   const handleClick = useCallback(
     (agentId: number) => {
-      // If clicked agent is a sub-agent, focus the parent's terminal instead
       const os = getOfficeState();
+      openRosterFor(agentId);
+      // If clicked agent is a sub-agent, focus the parent's terminal instead
       const focusId = os.terminalOwnerOf(agentId);
       transport.send({ type: 'focusAgent', id: focusId });
       // Standalone: focusAgent is a no-op server-side (there's no editor to
@@ -389,7 +446,7 @@ function App() {
         if (isMobile) showMobileTerminal();
       }
     },
-    [terminalAgentIds, isMobile, revealTerminal, showMobileTerminal],
+    [terminalAgentIds, isMobile, revealTerminal, showMobileTerminal, openRosterFor],
   );
 
   // Card click when there is no terminal pane to switch (VS Code, or a
@@ -499,6 +556,26 @@ function App() {
     return <div className="w-full h-full flex items-center justify-center ">Loading...</div>;
   }
 
+  // The roster panel for the clicked character. Desktop docks it as a column
+  // beside the office (after the card bar / terminal drawer, so the bar's
+  // overlay of the office's right edge never lands on it); mobile has no room
+  // beside the office, so it is a bottom sheet inside the office page.
+  const rosterPanel =
+    rosterTarget && !isDebugMode ? (
+      <RosterPanel
+        data={rosterData[rosterKey(rosterTarget.agentId, rosterTarget.parentToolId)] ?? null}
+        appearance={(() => {
+          const characterId = rosterTarget.parentToolId
+            ? officeState.getSubagentId(rosterTarget.agentId, rosterTarget.parentToolId)
+            : rosterTarget.agentId;
+          const ch = characterId === null ? undefined : officeState.characters.get(characterId);
+          return ch ? { palette: ch.palette, hueShift: ch.hueShift } : null;
+        })()}
+        variant={isMobile ? 'sheet' : 'dock'}
+        onClose={handleCloseRoster}
+      />
+    ) : null;
+
   // The office region is shared by both shells: desktop mounts it as the
   // flexing left half of the split view (the terminal panel docks beside it);
   // mobile mounts it as the first page of the sliding track. containerRef
@@ -511,7 +588,7 @@ function App() {
       <OfficeCanvas
         officeState={officeState}
         onClick={handleClick}
-        onAgentSelectionChange={setSelectedAgent}
+        onAgentSelectionChange={handleCanvasSelection}
         isEditMode={editor.isEditMode}
         editorState={editorState}
         onEditorTileAction={editor.handleEditorTileAction}
@@ -737,6 +814,8 @@ function App() {
       )}
 
       <ConnectionIndicator />
+
+      {isMobile && rosterPanel}
     </div>
   );
 
@@ -805,6 +884,8 @@ function App() {
               />
             )
           )}
+
+          {rosterPanel}
         </>
       )}
 

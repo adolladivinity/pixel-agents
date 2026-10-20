@@ -183,3 +183,24 @@ Resolution kept both sides (upstream's `directories`/terminal props and #393's T
   `UserPromptSubmit` is normalized to `promptSubmit` and also starts a task.
 - Messages: `agentRoster` (server to client) and `rosterPanelSelect` (client to server), see `core/asyncapi.yaml`. Addressing:
   `id` + optional `parentToolId` (see the schema description). Replayed to new clients via `resendAgentActivity(send, store, rosterMessages)`.
+
+## Roster panel (Task 9)
+
+- Decision: #393's `TaskBoard` is a per-agent task list, not a general selection panel, so it was NOT extended. The roster panel is a new
+  `webview-ui/src/components/RosterPanel.tsx`; the TaskBoard is untouched and keeps working (both can show at once: the board floats
+  top-right over the office, the roster panel is a column beside it).
+- Docking: desktop mounts it as the LAST flex sibling in `App.tsx` (after the `AgentCardBar` / `TerminalDrawer`), 300 px wide, full height,
+  beside the canvas and never over it, so no character is covered. It has to come after the card bar, which overlays the office's right edge
+  with a negative margin. Mobile has no room beside the office, so it is a bottom sheet (`absolute bottom-0 inset-x-0`, max 65% height, with the
+  ✕) inside the office page; it opens on the first tap of the two-step canvas tap (the `onAgentSelectionChange` path) and the TaskBoard behaviour there is unchanged.
+- State: `useExtensionMessages` owns `rosterData` (latest `agentRoster` per `rosterKey(id, parentToolId)`, stored whatever the arrival order),
+  `rosterTarget` and `selectRoster`. The target is its own state, NOT `selectedAgent`: a new agent auto-selects and #393 deselects on a bare-floor click,
+  and neither should open or close the panel. `selectRoster` sends `rosterPanelSelect`; a character click goes through `App.tsx openRosterFor`
+  (a negative sub-character id is sent as parent id + `parentToolId` via `officeState.subagentMeta`). Clicking a character still focuses its terminal.
+- Empty floor: #393 clears the office selection on a bare click; the roster panel stays open (its own target). It closes only via ✕, or when its
+  agent/sub-character is removed (`agentClosed`, `subagentClear`, `agentToolsClear` sub removal): the hook then drops the stored record, sends
+  `rosterPanelSelect { agentId: null }` and closes. On a reconnect replay (`existingAgents`) the open target is re-sent so the 1 s refresh resumes.
+- Pure formatters: `webview-ui/src/components/rosterFormat.ts`, unit test `webview-ui/test/rosterFormat.test.ts`.
+- Colours are `--color-roster-*` tokens in `webview-ui/src/index.css` (the `no-inline-colors` lint rule bans hex literals in components).
+- e2e: `e2e/tests/claude/hooks-on/roster-panel.spec.ts` (`@area:roster`), helpers `e2e/helpers/roster.ts`. Real canvas clicks need a character's screen
+  position: the new test hook `getCharacterCenter(id)` (installed in `App.tsx`, typed in `testHooks.ts`, e2e-only) projects it like `getTileCenter`.

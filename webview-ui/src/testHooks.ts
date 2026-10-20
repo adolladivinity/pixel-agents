@@ -90,6 +90,10 @@ declare global {
        *  through the renderer's own projection (zoom + pan) — lets a spec drive
        *  the REAL canvas mouse gesture at a known tile. Null before mount. */
       getTileCenter?: (col: number, row: number) => { x: number; y: number } | null;
+      /** Centre of a character's body in CSS pixels relative to the office
+       *  canvas (a sub-agent uses its negative id) — where a real click would
+       *  hit it. Null before mount or for an unknown id. */
+      getCharacterCenter?: (id: number) => { x: number; y: number } | null;
       getPets?: () => Array<{
         id: string;
         name: string;

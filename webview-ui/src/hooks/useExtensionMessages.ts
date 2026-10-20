@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { AgentTask, HooksConsentRequest } from '../../../core/src/messages.js';
+import type { AgentRoster, AgentTask, HooksConsentRequest } from '../../../core/src/messages.js';
+import { rosterKey } from '../components/rosterFormat.js';
 import { playDoneSound, playPermissionSound, setSoundEnabled } from '../notificationSound.js';
 import type { ExistingAgentMeta, PendingAgent } from '../office/engine/existingAgents.js';
 import { reconcileExistingAgents } from '../office/engine/existingAgents.js';
@@ -87,6 +88,15 @@ export interface DirectorySaved {
   seq: number;
 }
 
+/** Who the roster panel is about: a top-level agent or teammate by its id, or a
+ *  Task-tool sub-character by its parent's id plus the tool id. This is the pair
+ *  the server addresses (`agentRoster`, `rosterPanelSelect`), never the
+ *  sub-character's negative webview id. */
+export interface RosterTarget {
+  agentId: number;
+  parentToolId?: string;
+}
+
 interface ExtensionMessageState {
   agents: number[];
   /**
@@ -117,6 +127,17 @@ interface ExtensionMessageState {
    *  "has a board" is just presence. Unlike tool activity this is React state,
    *  not OfficeState: the board is DOM, and nothing on the canvas reads it. */
   agentTasks: Record<number, AgentTask[]>;
+  /** Latest `agentRoster` per target, keyed by `rosterKey`. Stored whatever the
+   *  order of arrival (a record can land before the agentStatus or sub-character
+   *  that triggered it), and dropped when its agent or sub-character goes. */
+  rosterData: Record<string, AgentRoster>;
+  /** The target the roster panel is open for (null = closed). Its own state,
+   *  not `selectedAgent`: a new agent auto-selects and a bare-floor click
+   *  deselects, and neither should open or close this panel. */
+  rosterTarget: RosterTarget | null;
+  /** Open, switch or (null) close the roster panel. Tells the server, which
+   *  refreshes the selected target's record every second. */
+  selectRoster: (target: RosterTarget | null) => void;
   layoutReady: boolean;
   layoutWasReset: boolean;
   loadedAssets?: { catalog: FurnitureAsset[]; sprites: Record<string, string[][]> };
@@ -209,6 +230,23 @@ export function useExtensionMessages(
   >({});
   const [subagentCharacters, setSubagentCharacters] = useState<SubagentCharacter[]>([]);
   const [agentTasks, setAgentTasks] = useState<Record<number, AgentTask[]>>({});
+  const [rosterData, setRosterData] = useState<Record<string, AgentRoster>>({});
+  const [rosterTarget, setRosterTargetState] = useState<RosterTarget | null>(null);
+  // Mirror of rosterTarget for the message handler, which is registered once.
+  const rosterTargetRef = useRef<RosterTarget | null>(null);
+  const selectRoster = useCallback((target: RosterTarget | null) => {
+    rosterTargetRef.current = target;
+    setRosterTargetState(target);
+    transport.send(
+      target === null
+        ? { type: 'rosterPanelSelect', agentId: null }
+        : {
+            type: 'rosterPanelSelect',
+            agentId: target.agentId,
+            ...(target.parentToolId ? { parentToolId: target.parentToolId } : {}),
+          },
+    );
+  }, []);
   const [layoutReady, setLayoutReady] = useState(false);
   const [layoutWasReset, setLayoutWasReset] = useState(false);
   const [loadedAssets, setLoadedAssets] = useState<
@@ -274,6 +312,32 @@ export function useExtensionMessages(
     const noteDirectoryName = (name?: string) => {
       if (!name) return;
       setAgentDirectoryNames((prev) => (prev.includes(name) ? prev : [...prev, name]));
+    };
+
+    // A character left: forget its roster record, and if the panel was open for
+    // it, close the panel and tell the server to stop refreshing it. Without
+    // this the panel would keep showing a gone agent (or, for the next one
+    // clicked, its leftovers). With `parentToolId` undefined it covers the
+    // agent and every sub-character it owns.
+    const forgetRoster = (agentId: number, parentToolId?: string) => {
+      setRosterData((prev) => {
+        const entries = Object.entries(prev);
+        const keep = entries.filter(
+          ([, r]) =>
+            !(r.id === agentId && (parentToolId === undefined || r.parentToolId === parentToolId)),
+        );
+        return keep.length === entries.length ? prev : Object.fromEntries(keep);
+      });
+      const target = rosterTargetRef.current;
+      if (
+        target &&
+        target.agentId === agentId &&
+        (parentToolId === undefined || target.parentToolId === parentToolId)
+      ) {
+        rosterTargetRef.current = null;
+        setRosterTargetState(null);
+        transport.send({ type: 'rosterPanelSelect', agentId: null });
+      }
     };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -422,12 +486,23 @@ export function useExtensionMessages(
         setAgentSeenActivity((prev) => omitKey(prev, id));
         setSubagentTools((prev) => omitKey(prev, id));
         setAgentTasks((prev) => omitKey(prev, id));
+        forgetRoster(id);
         // Remove all sub-agent characters belonging to this agent
         delete backgroundParentToolIdsRef.current[id];
         os.removeAllSubagents(id);
         setSubagentCharacters((prev) => prev.filter((s) => s.parentAgentId !== id));
         os.removeAgent(id);
       } else if (msg.type === 'existingAgents') {
+        // A (re)connect replay: the server forgot which target this client had
+        // open, so say it again or the panel would stop refreshing.
+        const open = rosterTargetRef.current;
+        if (open) {
+          transport.send({
+            type: 'rosterPanelSelect',
+            agentId: open.agentId,
+            ...(open.parentToolId ? { parentToolId: open.parentToolId } : {}),
+          });
+        }
         const incoming = msg.agents as number[];
         const meta = (msg.agentMeta || {}) as Record<number, ExistingAgentMeta>;
         const directoryNames = (msg.directoryNames || {}) as Record<number, string>;
@@ -567,6 +642,7 @@ export function useExtensionMessages(
           }
           for (const parentToolId of doomed) {
             os.removeSubagent(id, parentToolId);
+            forgetRoster(id, parentToolId);
           }
           setSubagentCharacters((prev) =>
             prev.filter((s) => s.parentAgentId !== id || bgSet?.has(s.parentToolId)),
@@ -704,6 +780,7 @@ export function useExtensionMessages(
         });
         // Remove sub-agent character
         os.removeSubagent(id, parentToolId);
+        forgetRoster(id, parentToolId);
         setSubagentCharacters((prev) =>
           prev.filter((s) => !(s.parentAgentId === id && s.parentToolId === parentToolId)),
         );
@@ -865,6 +942,15 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentContextUsage') {
         const id = msg.id as number;
         os.setAgentContext(id, msg.contextTokens as number, msg.maxContextTokens as number);
+      } else if (msg.type === 'agentRoster') {
+        const record = msg as AgentRoster;
+        if (typeof record.id !== 'number') return;
+        // Keyed, not looked up against live characters: this can arrive before
+        // the agentCreated / sub-character it describes.
+        setRosterData((prev) => ({
+          ...prev,
+          [rosterKey(record.id, record.parentToolId)]: record,
+        }));
       } else if (msg.type === 'agentTasks') {
         const id = msg.id as number;
         const tasks = msg.tasks as AgentTask[];
@@ -917,6 +1003,9 @@ export function useExtensionMessages(
     subagentTools,
     subagentCharacters,
     agentTasks,
+    rosterData,
+    rosterTarget,
+    selectRoster,
     layoutReady,
     layoutWasReset,
     loadedAssets,
