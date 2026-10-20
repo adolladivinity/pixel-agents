@@ -27,6 +27,7 @@ import {
   layoutToTileMap,
 } from '../layout/layoutSerializer.js';
 import { findPath, getWalkableTiles, isWalkable } from '../layout/tileMap.js';
+import { spriteForCard } from '../sprites/cardSprite.js';
 import { getPetCount, getPetName } from '../sprites/petSpriteData.js';
 import { getLoadedCharacterCount } from '../sprites/spriteData.js';
 import type {
@@ -101,6 +102,13 @@ export class OfficeState {
   /** Reverse lookup: sub-agent character ID → parent info */
   subagentMeta: Map<number, { parentAgentId: number; parentToolId: string }> = new Map();
   private nextSubagentId = -1;
+  /**
+   * Roster-card sprite index by holder ("<agentId>" or "<parentId>:<toolId>"). `agentRoster` can
+   * arrive before or after the character exists, and before or after the character sheets load,
+   * so the index is kept here and resolved (`spriteForCard`) whenever it is applied.
+   * A temp has no entry and keeps the palette and hue the server picked.
+   */
+  private cardLooks: Map<string, number> = new Map();
 
   /** Tiles an agent can stand on to write on the task board, nearest side
    *  first, each with the direction it faces from there. Empty when the office
@@ -544,6 +552,11 @@ export class OfficeState {
       palette = pick.palette;
       hueShift = pick.hueShift;
     }
+    const cardLook = this.cardLookFor(String(id));
+    if (cardLook) {
+      palette = cardLook.palette;
+      hueShift = cardLook.hueShift;
+    }
 
     // Try preferred seat first, then (for teammates) the seat closest to the
     // anchor agent, then any free seat. anchorTile resolves to the anchor's SEAT
@@ -671,7 +684,47 @@ export class OfficeState {
     return this.subagentMeta.get(id)?.parentAgentId ?? id;
   }
 
+  private cardLookFor(key: string): { palette: number; hueShift: number } | null {
+    const spriteIndex = this.cardLooks.get(key);
+    if (spriteIndex === undefined) return null;
+    const { sheet, hueShift } = spriteForCard(spriteIndex, getLoadedCharacterCount());
+    return { palette: sheet, hueShift };
+  }
+
+  /** Point a live character at the look its key resolves to (no-op when it has none). */
+  private applyCardLook(key: string): void {
+    const look = this.cardLookFor(key);
+    if (!look) return;
+    const sep = key.indexOf(':');
+    const characterId = sep === -1 ? Number(key) : this.subagentIdMap.get(key);
+    const ch = characterId === undefined ? undefined : this.characters.get(characterId);
+    if (!ch) return;
+    ch.palette = look.palette;
+    ch.hueShift = look.hueShift;
+  }
+
+  /**
+   * Make a character look like its roster card, or (null, a temp) leave it as the server drew it.
+   * Addressed like `agentRoster`: a top-level agent by id, a Task-tool sub-agent by parent id +
+   * tool id. Safe to call before the character exists; it is applied when it is created.
+   */
+  setCardLook(id: number, parentToolId: string | undefined, spriteIndex: number | null): void {
+    const key = parentToolId ? `${id}:${parentToolId}` : String(id);
+    if (spriteIndex === null) {
+      this.cardLooks.delete(key);
+      return;
+    }
+    this.cardLooks.set(key, spriteIndex);
+    this.applyCardLook(key);
+  }
+
+  /** Re-resolve every card look, e.g. after the character sheets finish loading. */
+  refreshCardLooks(): void {
+    for (const key of this.cardLooks.keys()) this.applyCardLook(key);
+  }
+
   removeAgent(id: number): void {
+    this.cardLooks.delete(String(id));
     const ch = this.characters.get(id);
     if (!ch) return;
     if (ch.matrixEffect === 'despawn') return; // already despawning
@@ -873,8 +926,9 @@ export class OfficeState {
 
     const id = this.nextSubagentId--;
     const parentCh = this.characters.get(parentAgentId);
-    const palette = parentCh ? parentCh.palette : 0;
-    const hueShift = parentCh ? parentCh.hueShift : 0;
+    const cardLook = this.cardLookFor(key);
+    const palette = cardLook ? cardLook.palette : parentCh ? parentCh.palette : 0;
+    const hueShift = cardLook ? cardLook.hueShift : parentCh ? parentCh.hueShift : 0;
 
     // Find the closest walkable tile to the parent, avoiding tiles occupied by other characters
     const parentCol = parentCh ? parentCh.tileCol : 0;
@@ -904,6 +958,7 @@ export class OfficeState {
   /** Remove a specific sub-agent character and free its seat */
   removeSubagent(parentAgentId: number, parentToolId: string): void {
     const key = `${parentAgentId}:${parentToolId}`;
+    this.cardLooks.delete(key);
     const id = this.subagentIdMap.get(key);
     if (id === undefined) return;
 
@@ -960,6 +1015,7 @@ export class OfficeState {
     }
     for (const key of toRemove) {
       this.subagentIdMap.delete(key);
+      this.cardLooks.delete(key);
     }
   }
 

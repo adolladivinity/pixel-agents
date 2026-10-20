@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import type { AgentRoster } from '../../../core/src/messages.js';
+import { spriteForCard } from '../office/sprites/cardSprite.js';
 import { getLoadedCharacterCount } from '../office/sprites/spriteData.js';
 import { CharacterMugShot } from './CharacterMugShot.js';
 import {
@@ -82,19 +83,14 @@ export function RosterPanel({ data, appearance, variant, onClose }: RosterPanelP
   const name = isTemp ? 'Temp' : (card?.name ?? '');
   const role = isTemp ? 'Temp' : (card?.role ?? '');
 
-  // The card's own sprite when it is loaded; otherwise the character's current
-  // look (a temp's hue-shifted sprite, or a card whose sprite is missing).
-  const cardSprite =
-    !isTemp &&
-    card !== null &&
-    card.spriteIndex >= 0 &&
-    card.spriteIndex < getLoadedCharacterCount()
-      ? card.spriteIndex
-      : null;
-  const face =
-    cardSprite !== null
-      ? { palette: cardSprite, hueShift: 0 }
-      : (appearance ?? { palette: 0, hueShift: 0 });
+  // The card's own sprite when it is loaded, else its hue-shifted bundled
+  // fallback (the same look the office gives the character). A temp has no card
+  // and shows the character's current look.
+  const cardFace =
+    !isTemp && card !== null ? spriteForCard(card.spriteIndex, getLoadedCharacterCount()) : null;
+  const face = cardFace
+    ? { palette: cardFace.sheet, hueShift: cardFace.hueShift }
+    : (appearance ?? { palette: 0, hueShift: 0 });
 
   const frame =
     variant === 'dock'

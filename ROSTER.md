@@ -204,3 +204,20 @@ Resolution kept both sides (upstream's `directories`/terminal props and #393's T
 - Colours are `--color-roster-*` tokens in `webview-ui/src/index.css` (the `no-inline-colors` lint rule bans hex literals in components).
 - e2e: `e2e/tests/claude/hooks-on/roster-panel.spec.ts` (`@area:roster`), helpers `e2e/helpers/roster.ts`. Real canvas clicks need a character's screen
   position: the new test hook `getCharacterCenter(id)` (installed in `App.tsx`, typed in `testHooks.ts`, e2e-only) projects it like `getTileCenter`.
+
+## Sprites (Task 10)
+
+- Combined character list = 6 bundled (`char_0..5`), then the external asset dir's `char_N.png` in order, so cards 6-21 are the user's first 16 custom
+  sprites and cards 22-29 are 8 more. Those 8 are `CAST` entries 16-23 in `C:\Users\thoma\pixel-agents-assets\tools\build.py` (same recolour-a-bundled-sheet
+  builder; names there are "<card name>, <role>"). Order must match the seed's `spriteIndex`; never reorder or insert before the end.
+  The assets folder is not a git repo. Backup taken before the change: `C:\Users\thoma\pixel-agents-assets.bak-2026-10-20` (safe to delete once the new sprites look right).
+  Re-running `build.py` rewrites every `char_N.png` with fresh PNG metadata (pixels identical, bytes differ); the original 16 files were restored from the backup so they stay byte-identical.
+  `cast_preview.png` is NOT written by `build.py` and still shows the first 16 only.
+- `webview-ui/src/office/sprites/cardSprite.ts` `spriteForCard(spriteIndex, loadedCount)` returns `{ sheet, hueShift }`: the card's own sheet when loaded, else
+  bundled sheet `spriteIndex % 6` with hue `(spriteIndex * 47) % 360` (stable per index). Test: `webview-ui/test/cardSprite.test.ts`.
+- Wiring: the office character now looks like its card. `useExtensionMessages` calls `OfficeState.setCardLook(id, parentToolId, card.spriteIndex | null)` on every
+  `agentRoster` (null for a temp, so temps keep the server-picked palette/hue). `OfficeState` keeps the index in `cardLooks` and resolves it with `spriteForCard`
+  when the roster message arrives before or after the character is created, and again via `refreshCardLooks()` when `characterSpritesLoaded` lands. Sub-agents
+  ("Subtask" characters) use their own card; with none they still inherit the parent's look. `RosterPanel` face uses `spriteForCard` too. Test: `webview-ui/test/cardLook.test.ts`.
+  The palette/hue the server sends in `agentCreated` is unchanged (still the upstream diversity pick); the card look overrides it in the webview and is persisted by the
+  usual `saveAgentSeats`, so a restored agent briefly shows the saved look until its roster message arrives.

@@ -792,6 +792,8 @@ export function useExtensionMessages(
         }>;
         console.log(`[Webview] Received ${characters.length} pre-colored character sprites`);
         setCharacterTemplates(characters);
+        // Cards whose sprite was not loaded yet were drawn with the hue-shifted fallback.
+        os.refreshCardLooks();
       } else if (msg.type === 'petSpritesLoaded') {
         const pets = msg.pets;
         if (!Array.isArray(pets)) {
@@ -945,6 +947,14 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentRoster') {
         const record = msg as AgentRoster;
         if (typeof record.id !== 'number') return;
+        // The character in the office looks like its card; a temp keeps the
+        // palette and hue the server picked. OfficeState remembers the look, so
+        // this works whether it arrives before or after the character exists.
+        os.setCardLook(
+          record.id,
+          record.parentToolId,
+          !record.temp && record.card ? record.card.spriteIndex : null,
+        );
         // Keyed, not looked up against live characters: this can arrive before
         // the agentCreated / sub-character it describes.
         setRosterData((prev) => ({
