@@ -221,3 +221,13 @@ Resolution kept both sides (upstream's `directories`/terminal props and #393's T
   ("Subtask" characters) use their own card; with none they still inherit the parent's look. `RosterPanel` face uses `spriteForCard` too. Test: `webview-ui/test/cardLook.test.ts`.
   The palette/hue the server sends in `agentCreated` is unchanged (still the upstream diversity pick); the card look overrides it in the webview and is persisted by the
   usual `saveAgentSeats`, so a restored agent briefly shows the saved look until its roster message arrives.
+
+## Install (Task 11)
+
+- Build: `npm run package`, then `npx @vscode/vsce package` (writes `pixel-agents-1.5.0.vsix`), then
+  `node scripts/verify-vsix-package.mjs pixel-agents-1.5.0.vsix` (must end with "VSIX inventory and extension-host smoke passed").
+- Copy `~/.pixel-agents` to a dated backup first. Uninstall the Marketplace `pablodelucca.pixel-agents`, run
+  `code --install-extension pixel-agents-1.5.0.vsix`, and reload the window.
+- The fork keeps the upstream ID and version, so turn off **Auto Update** for the extension, or a newer Marketplace release replaces it.
+- Roll back: uninstall, then `code --install-extension pablodelucca.pixel-agents`. Upstream ignores `roster.json`, so stats survive.
+- Stats: `~/.pixel-agents/roster.json` plus `roster.json.bak` (last good copy, auto-restored). To reset, delete both files.
